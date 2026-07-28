@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/serve-static.mjs",
     "lint:source": "node scripts/validate-source.mjs",
     "test:browser": "node scripts/browser-smoke.mjs"
   },
