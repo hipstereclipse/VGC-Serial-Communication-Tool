@@ -5,6 +5,7 @@ import path from "node:path";
 const edge = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const profile = path.resolve(".edge-smoke-runtime");
 const debuggingPort = 9321;
+const pageUrl = process.env.SMOKE_URL ?? "http://127.0.0.1:4173";
 await mkdir(profile, { recursive: true });
 
 const browser = spawn(
@@ -15,7 +16,7 @@ const browser = spawn(
     "--no-sandbox",
     `--remote-debugging-port=${debuggingPort}`,
     `--user-data-dir=${profile}`,
-    "http://127.0.0.1:4173"
+    pageUrl
   ],
   { stdio: "ignore" }
 );
@@ -26,7 +27,7 @@ async function pageTarget() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const targets = await fetch(`http://127.0.0.1:${debuggingPort}/json/list`).then((response) => response.json());
-      const target = targets.find((item) => item.type === "page" && item.url.includes("127.0.0.1:4173"));
+      const target = targets.find((item) => item.type === "page" && item.url.startsWith(pageUrl));
       if (target) return target;
     } catch {}
     await pause(250);
@@ -68,20 +69,54 @@ try {
   const cdp = connect(target.webSocketDebuggerUrl);
   await cdp.ready;
   await cdp.send("Runtime.enable");
-  await pause(1000);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const initialized = await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector("#commandCount")?.textContent === "83/83"`,
+      returnByValue: true
+    });
+    if (initialized.result?.value) break;
+    if (attempt === 39) throw new Error("Timed out waiting for the application to initialize.");
+    await pause(100);
+  }
   const result = await cdp.send("Runtime.evaluate", {
     expression: `new Promise((resolve) => {
+      const initialTheme = document.documentElement.dataset.theme;
+      document.querySelector("#themeToggle").click();
+      const theme = document.documentElement.dataset.theme;
+      const savedTheme = localStorage.getItem("vgc50x-theme");
       document.querySelector("#demoBtn").click();
-      setTimeout(() => document.querySelector('[data-command="AYT"]').click(), 80);
-      setTimeout(() => document.querySelector('[data-command="PRX"]').click(), 500);
+      document.querySelector('[data-command="COM"]').click();
+      const guidedDialog = document.querySelector("#guidedCommandDialog");
+      const interval = guidedDialog.querySelector('[data-parameter="interval"]');
+      interval.value = "2";
+      interval.dispatchEvent(new Event("change", { bubbles: true }));
+      const guidedOpen = guidedDialog.open;
+      const guidedPreview = document.querySelector("#guidedCommandPreview").textContent;
+      const guidedOptions = document.querySelector("#guidedCommandSelect").options.length;
+      document.querySelector("#guidedSendBtn").click();
+      const guidedCommand = document.querySelector("#commandInput").value;
+      const guidedClosed = !guidedDialog.open;
+      setTimeout(() => document.querySelector('[data-command="AYT"]').click(), 180);
+      setTimeout(() => document.querySelector('[data-command="PRX"]').click(), 600);
       setTimeout(() => resolve({
+        theme,
+        themeToggled: theme !== initialTheme,
+        themeSaved: savedTheme === theme,
+        guidedOpen,
+        guidedClosed,
+        guidedPreview,
+        guidedCommand,
+        guidedOptions,
         connection: document.querySelector("#connectionPillText").textContent,
         device: document.querySelector("#deviceName").textContent,
         channel: document.querySelector("#channelValue1").textContent,
         logs: Number(document.querySelector("#sessionLogCount").textContent),
         samples: Number(document.querySelector("#sessionSampleCount").textContent),
         dictionary: document.querySelector("#commandCount").textContent,
-        rows: document.querySelectorAll(".traffic-row").length
+        rows: document.querySelectorAll(".traffic-row").length,
+        implementedAdapters: window.VGCControllerRegistry.implemented.map((item) => item.id),
+        skeletonAdapters: window.VGCControllerRegistry.skeletons.map((item) => item.id),
+        vgc031Commands: window.VGCControllerRegistry.get("vgc031").commands.length
       }), 1100);
     })`,
     awaitPromise: true,
@@ -92,13 +127,23 @@ try {
   }
   const value = result.result?.value;
   const checks = [
+    value?.themeToggled,
+    value?.themeSaved,
+    value?.guidedOpen,
+    value?.guidedClosed,
+    value?.guidedPreview === "COM,2",
+    value?.guidedCommand === "COM,2",
+    value?.guidedOptions >= 40,
     value?.connection === "Demo connected",
     value?.device?.includes("VGC501"),
     value?.channel && value.channel !== "—",
     value?.logs >= 6,
     value?.samples >= 3,
     value?.dictionary === "83/83",
-    value?.rows >= 6
+    value?.rows >= 6,
+    value?.implementedAdapters?.join(",") === "vgc50x,vgc031",
+    value?.skeletonAdapters?.join(",") === "vgc083a,vgc083b,vgc083c,vgc094",
+    value?.vgc031Commands === 19
   ];
   if (checks.some((check) => !check)) {
     throw new Error(`Browser smoke checks failed: ${JSON.stringify(value)}`);

@@ -5,6 +5,8 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+  const controllerRegistry = window.VGCControllerRegistry;
+  if (!controllerRegistry) throw new Error("Controller registry failed to load.");
   const STATUS = {
     0: ["Okay", "ok"],
     1: ["Underrange", "warn"],
@@ -19,12 +21,141 @@
   const CATEGORIES = ["All", "Measurement", "Switching", "Gauge", "Gauge control", "General", "Logger", "Transfer & test", "Network"];
   const TOKEN_BYTES = { CR: 13, LF: 10, ENQ: 5, ACK: 6, NAK: 21, ETX: 3, TAB: 9, NUL: 0 };
   const CONTROL_NAMES = { 0: "NUL", 3: "ETX", 5: "ENQ", 6: "ACK", 9: "TAB", 10: "LF", 13: "CR", 21: "NAK" };
+  const choice = (values) => values.map(([value, label]) => ({ value, label }));
+  const ON_OFF = choice([["0", "Off"], ["1", "On"]]);
+  const CHANNEL_STATE = { type: "select", options: ON_OFF, defaultValue: "0", help: "Choose the state for this channel." };
+  const FILTER_MODE = {
+    type: "select",
+    options: choice([["0", "Off"], ["1", "Fast"], ["2", "Normal"], ["3", "Slow"]]),
+    defaultValue: "2",
+    help: "Normal filtering is a good default for most measurements."
+  };
+  const GAS_TYPE = {
+    type: "select",
+    options: choice([
+      ["0", "Air / nitrogen (N₂)"],
+      ["1", "Argon (Ar)"],
+      ["2", "Hydrogen (H₂)"],
+      ["3", "Helium (He)"],
+      ["4", "Neon (Ne)"],
+      ["5", "Krypton (Kr)"],
+      ["6", "Xenon (Xe)"],
+      ["7", "Other gas"]
+    ]),
+    defaultValue: "0",
+    help: "Gas selection changes the pressure calculation."
+  };
+  const GUIDED_FIELDS = {
+    COM: {
+      interval: {
+        type: "select",
+        options: choice([["0", "Every 100 ms"], ["1", "Every second"], ["2", "Every minute"]]),
+        defaultValue: "1",
+        label: "Measurement interval",
+        help: "Starts continuous measurement output at this interval."
+      }
+    },
+    UNI: {
+      unit: {
+        type: "select",
+        options: choice([
+          ["0", "mbar / bar"],
+          ["1", "Torr"],
+          ["2", "Pascal (Pa)"],
+          ["3", "micron"],
+          ["4", "hectopascal (hPa)"],
+          ["5", "Volt"]
+        ]),
+        defaultValue: "0",
+        label: "Pressure unit"
+      }
+    },
+    BAU: {
+      code: {
+        type: "select",
+        options: choice([
+          ["0", "9,600 baud"],
+          ["1", "19,200 baud"],
+          ["2", "38,400 baud"],
+          ["3", "57,600 baud"],
+          ["4", "115,200 baud"]
+        ]),
+        defaultValue: "4",
+        label: "New baud rate",
+        help: "Reconnect using the same baud rate after the controller acknowledges."
+      }
+    },
+    LNG: {
+      language: {
+        type: "select",
+        options: choice([["0", "English"], ["1", "German"], ["2", "French"]]),
+        defaultValue: "0",
+        label: "Display language"
+      }
+    },
+    FMT: {
+      mode: {
+        type: "select",
+        options: choice([["0", "Floating notation"], ["1", "Exponential notation"]]),
+        defaultValue: "0",
+        label: "Number format"
+      }
+    },
+    CPT: {
+      mode: {
+        type: "select",
+        options: choice([["0", "INFICON"], ["1", "Oerlikon Leybold Vacuum"]]),
+        defaultValue: "0",
+        label: "Protocol compatibility"
+      }
+    },
+    SAV: {
+      set: {
+        type: "select",
+        options: choice([["0", "Load default parameters"], ["1", "Store current parameters"]]),
+        defaultValue: "1",
+        label: "EEPROM action"
+      }
+    },
+    RES: {
+      "1": {
+        type: "select",
+        options: choice([["1", "Acknowledge cancelable errors"]]),
+        defaultValue: "1",
+        label: "Reset action"
+      }
+    },
+    DCS: {
+      mode: {
+        type: "select",
+        options: choice([
+          ["0", "Off"],
+          ["1", "After 10 minutes"],
+          ["2", "After 30 minutes"],
+          ["3", "After 1 hour"],
+          ["4", "After 2 hours"],
+          ["5", "After 8 hours"],
+          ["6", "Dark after 1 minute"]
+        ]),
+        defaultValue: "0",
+        label: "Screensaver timing"
+      }
+    },
+    ETH: {
+      dhcp: {
+        type: "select",
+        options: choice([["0", "Manual network settings"], ["1", "Automatic (DHCP)"]]),
+        defaultValue: "1",
+        label: "Address assignment"
+      }
+    }
+  };
 
   const cmd = (mnemonic, name, category, syntax, example, description, risk = "safe", note = "", response = "") => ({
     mnemonic, name, category, syntax, example, description, risk, note, response
   });
 
-  const commands = [
+  const vgc50xCommands = [
     cmd("AYT", "Controller identity", "General", "AYT", "AYT", "Returns controller type, model/part number, serial number, firmware, and hardware revision.", "safe", "Best first command after connecting.", "VGC50x,model,serial,firmware,hardware"),
     cmd("COM", "Continuous measurement output", "Measurement", "COM [,interval]", "COM,1", "Starts or stops automatic measurement frames. Interval 0 = 100 ms, 1 = 1 s, 2 = 1 min.", "safe", "Any host command stops continuous output. Send COM,1 to restore one-second streaming.", "status,value pairs for every channel"),
     cmd("CPR", "Combined pressure", "Measurement", "CPR [,ch1,ch2,ch3]", "CPR", "Reads or configures the channels used for combined pressure evaluation. Channel selectors are 0 through 3.", "safe", "", "channel selection followed by combined measurement"),
@@ -92,6 +223,7 @@
     cmd("ETH", "Ethernet configuration", "Network", "ETH [,dhcp,ip,mask,gateway]", "ETH", "Reads or changes DHCP, IP address, subnet mask, and gateway.", "danger", "Changing network settings can disconnect the Ethernet virtual serial path.")
   ];
 
+  let commands = vgc50xCommands;
   [1, 2, 3].forEach((n) => {
     commands.push(
       cmd(`PR${n}`, `Pressure channel ${n}`, "Measurement", `PR${n}`, `PR${n}`, `Returns measurement status and pressure for channel ${n}.`, "safe", "", "status,value"),
@@ -119,6 +251,10 @@
     selectedCommand: null,
     category: "All",
     identity: null,
+    controllerAdapterId: null,
+    activeProbe: null,
+    identityWaiter: null,
+    identifying: false,
     unit: "unit",
     lastChannels: {},
     terminalVisible: [],
@@ -129,7 +265,7 @@
     nextPortId: 1
   };
 
-  function freshSession(name = "VGC50x session") {
+  function freshSession(name = "INFICON controller session") {
     const now = new Date().toISOString();
     return {
       schema: "vgc50x-session/v1",
@@ -168,6 +304,36 @@
 
   function timeLabel(iso) {
     return new Date(iso).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 });
+  }
+
+  function applyTheme(theme, persist = true) {
+    const nextTheme = theme === "light" ? "light" : "dark";
+    document.documentElement.dataset.theme = nextTheme;
+    if (persist) localStorage.setItem("vgc50x-theme", nextTheme);
+    const toggle = $("#themeToggle");
+    if (toggle) {
+      const targetTheme = nextTheme === "light" ? "dark" : "light";
+      toggle.setAttribute("aria-label", `Switch to ${targetTheme} mode`);
+      toggle.setAttribute("aria-pressed", nextTheme === "light" ? "true" : "false");
+      $("#themeToggleText").textContent = targetTheme === "light" ? "Light" : "Dark";
+    }
+    const themeColor = $('meta[name="theme-color"]');
+    if (themeColor) themeColor.content = nextTheme === "light" ? "#f3f6f7" : "#0b1118";
+    drawTrend();
+  }
+
+  function initTheme() {
+    const preferred = window.matchMedia("(prefers-color-scheme: light)");
+    const saved = localStorage.getItem("vgc50x-theme");
+    const initial = document.documentElement.dataset.theme ||
+      (saved === "light" || saved === "dark" ? saved : preferred.matches ? "light" : "dark");
+    applyTheme(initial, false);
+    $("#themeToggle").addEventListener("click", () => {
+      applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+    });
+    preferred.addEventListener?.("change", (event) => {
+      if (!localStorage.getItem("vgc50x-theme")) applyTheme(event.matches ? "light" : "dark", false);
+    });
   }
 
   function toast(message, kind = "") {
@@ -322,9 +488,158 @@
     });
     $("#sendBtn").disabled = !state.connected;
     $("#identifyBtn").disabled = !state.connected;
-    $$("#quickCommands button").forEach((button) => (button.disabled = !state.connected));
+    $$("#quickCommands button[data-command]").forEach((button) => (button.disabled = !state.connected));
+    $("#guidedSendBtn").disabled = !state.connected;
     if ($("#detailQuery")) $("#detailQuery").disabled = !state.connected;
     $("#trafficStatus").textContent = state.connected ? (state.demo ? "Demo device ready" : "Listening for serial data") : "Idle";
+  }
+
+  function identityMeta(identity) {
+    if (identity.adapterId === "vgc031") {
+      return `P/N ${identity.model} · FW ${identity.firmware} · address ${identity.address}`;
+    }
+    const details = [];
+    if (identity.serial) details.push(`S/N ${identity.serial}`);
+    if (identity.firmware) details.push(`FW ${identity.firmware}`);
+    if (identity.hardware) details.push(`HW ${identity.hardware}`);
+    return details.join(" · ") || "Identity response verified";
+  }
+
+  function applyControllerProfile(adapterId) {
+    const adapter = controllerRegistry.get(adapterId);
+    commands = adapter?.commands?.length ? adapter.commands : vgc50xCommands;
+    state.category = "All";
+    state.selectedCommand = null;
+    if ($("#commandSearch")) $("#commandSearch").value = "";
+    renderCategories();
+    renderCommands();
+    $("#commandDetail").innerHTML = `
+      <div class="command-detail-empty">
+        <strong>${escapeHtml(adapter?.label || "Controller")} commands loaded</strong>
+        <span>Select a command to see its wire syntax and safety notes.</span>
+      </div>`;
+
+    const buttons = $$("#quickCommands button[data-command]");
+    const vgc031Quick = [
+      ["#01RD", "Read pressure"],
+      ["#01VER", "Read firmware"],
+      ["#01RL+", "Relay 1 on point"],
+      ["#01RL-", "Relay 1 off point"],
+      ["#01RH+", "Relay 2 on point"],
+      ["#01RH-", "Relay 2 off point"]
+    ];
+    if (adapterId === "vgc031") {
+      buttons.forEach((button, index) => {
+        const spec = vgc031Quick[index];
+        button.hidden = !spec;
+        if (!spec) return;
+        button.dataset.command = spec[0];
+        delete button.dataset.guided;
+        button.textContent = spec[0];
+        button.title = spec[1];
+      });
+      $("#guidedCommandBtn").hidden = true;
+    } else {
+      const defaults = [
+        ["AYT"], ["PR1"], ["PRX"], ["TID"], ["ERR"], ["MAC"], ["PNR"], ["RHR"], ["TMP"],
+        ["COM", true], ["UNI", true], ["BAL", true], ["FIL", true], ["GAS", true]
+      ];
+      buttons.forEach((button, index) => {
+        const [value, guided] = defaults[index];
+        button.hidden = false;
+        button.dataset.command = value;
+        if (guided) button.dataset.guided = "true";
+        else delete button.dataset.guided;
+        button.textContent = `${value}${guided ? "…" : ""}`;
+        button.title = guided ? `Enter ${value} parameters` : `Send ${value}`;
+      });
+      $("#guidedCommandBtn").hidden = false;
+    }
+  }
+
+  function acceptIdentity(identity) {
+    const changed = state.identity?.adapterId !== identity.adapterId;
+    state.identity = identity;
+    state.controllerAdapterId = identity.adapterId;
+    state.session.device = identity;
+    if (identity.adapterId === "vgc031") state.unit = "Torr";
+    $("#deviceName").textContent = `${identity.controller}${identity.model ? ` · ${identity.model}` : ""}`;
+    $("#deviceMeta").textContent = identityMeta(identity);
+    applyControllerProfile(identity.adapterId);
+    $("#trafficStatus").textContent = `${identity.controller} verified`;
+    if (changed) toast(`${identity.controller} identified and verified.`);
+    scheduleSave();
+    if (state.identityWaiter) state.identityWaiter(identity);
+  }
+
+  function waitForIdentity(timeoutMs) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        if (state.identityWaiter === complete) state.identityWaiter = null;
+        resolve(null);
+      }, timeoutMs);
+      function complete(identity) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (state.identityWaiter === complete) state.identityWaiter = null;
+        resolve(identity);
+      }
+      state.identityWaiter = complete;
+    });
+  }
+
+  async function identifyController() {
+    if (!state.connected || state.demo || state.identifying) return state.identity;
+    state.identifying = true;
+    state.identity = null;
+    state.controllerAdapterId = null;
+    $("#deviceName").textContent = "Identifying controller…";
+    const settings = collectSettings();
+    $("#deviceMeta").textContent = `Safe read-only probes at ${settings.baudRate} baud`;
+    $("#trafficStatus").textContent = "Running identity probes";
+    addSystem("Automatic identification started. Only documented read-only commands will be sent.");
+
+    let identity = null;
+    try {
+      for (const adapter of controllerRegistry.implemented) {
+        if (!state.connected) break;
+        for (const step of adapter.probeSteps) {
+          if (!state.connected) break;
+          state.activeProbe = { adapterId: adapter.id, command: step.command };
+          await transmit(encoder.encode(step.text), { command: step.command, label: step.label });
+          identity = await waitForIdentity(step.timeoutMs);
+          if (identity) break;
+          state.pendingCommand = "";
+        }
+        if (identity) {
+          if (adapter.verifyStep) {
+            const step = adapter.verifyStep;
+            state.activeProbe = { adapterId: adapter.id, command: step.command };
+            await transmit(encoder.encode(step.text), { command: step.command, label: step.label });
+          }
+          break;
+        }
+      }
+    } finally {
+      state.activeProbe = null;
+      state.identityWaiter = null;
+      state.identifying = false;
+    }
+
+    if (!state.connected) return null;
+    if (!identity) {
+      $("#deviceName").textContent = "Unknown serial controller";
+      const parity = settings.parity === "none" ? "N" : settings.parity[0].toUpperCase();
+      $("#deviceMeta").textContent = `No known response at ${settings.baudRate}, ${settings.dataBits}-${parity}-${settings.stopBits}`;
+      $("#trafficStatus").textContent = "Connected · identity not verified";
+      addSystem("No supported identity signature was received. Check baud/framing and controller address, then re-identify.");
+      toast("Connected, but the controller identity could not be verified.", "warning");
+    }
+    return identity;
   }
 
   async function connectSerial() {
@@ -354,6 +669,7 @@
       addSystem(`Connected at ${settings.baudRate} baud, ${settings.dataBits}-${settings.parity === "none" ? "N" : settings.parity[0].toUpperCase()}-${settings.stopBits}, flow ${settings.flowControl}.`);
       state.readLoop = readSerial();
       toast("Serial connection opened.");
+      await identifyController();
     } catch (error) {
       toast(`Could not open the port: ${error.message}. Close any other serial program and try again.`, "error");
     }
@@ -400,6 +716,10 @@
     state.port = null;
     state.reader = null;
     state.pendingCommand = "";
+    state.activeProbe = null;
+    if (state.identityWaiter) state.identityWaiter(null);
+    state.identityWaiter = null;
+    state.identifying = false;
     setConnection("offline");
     addSystem(wasDemo ? "Demo disconnected." : "Serial port disconnected.");
     await persistSession();
@@ -448,7 +768,7 @@
         state.lineBytes.push(byte);
       }
     }
-    if (sawAck && $("#autoEnqCheck").checked && state.pendingCommand) {
+    if (sawAck && ($("#autoEnqCheck").checked || state.identifying) && state.pendingCommand) {
       setTimeout(() => transmit(new Uint8Array([5]), { label: "Automatic ENQ", raw: true }), 30);
     }
   }
@@ -456,21 +776,26 @@
   function parseLine(line) {
     if (!line) return;
     const pending = state.pendingCommand;
-    if (/^VGC50[123],/i.test(line)) {
-      const parts = line.split(",");
-      state.identity = {
-        controller: parts[0] || "VGC50x",
-        model: parts[1] || "",
-        serial: parts[2] || "",
-        firmware: parts[3] || "",
-        hardware: parts[4] || ""
-      };
-      state.session.device = state.identity;
-      $("#deviceName").textContent = `${state.identity.controller} · ${state.identity.model}`;
-      $("#deviceMeta").textContent = `S/N ${state.identity.serial} · FW ${state.identity.firmware} · HW ${state.identity.hardware}`;
-      toast(`${state.identity.controller} identified.`);
-      scheduleSave();
-    }
+    const context = {
+      probeAdapterId: state.activeProbe?.adapterId || null,
+      activeAdapterId: state.controllerAdapterId,
+      command: pending
+    };
+    const identity = controllerRegistry.identify(line, context);
+    if (identity) acceptIdentity(identity);
+    const adapterMeasurements = controllerRegistry.parseMeasurements(line, {
+      ...context,
+      activeAdapterId: identity?.adapterId || state.controllerAdapterId
+    });
+    adapterMeasurements.forEach((measurement) => {
+      state.unit = measurement.unit || state.unit;
+      recordMeasurement(
+        measurement.channel,
+        measurement.status,
+        measurement.value,
+        measurement.rawValue
+      );
+    });
     if (pending === "UNI" && /^\d(?:,|$)/.test(line)) {
       const code = Number(line.split(",")[0]);
       if (UNITS[code]) {
@@ -478,7 +803,9 @@
         [1, 2, 3].forEach((channel) => $(`#channelUnit${channel}`).textContent = state.unit);
       }
     }
-    const pairs = [...line.matchAll(/(?:^|,)([0-7]),([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?)/gi)];
+    const pairs = state.controllerAdapterId === "vgc031"
+      ? []
+      : [...line.matchAll(/(?:^|,)([0-7]),([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?)/gi)];
     if (pairs.length) {
       let baseChannel = 1;
       const match = pending.match(/^PR([123])$/);
@@ -532,9 +859,10 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     const ctx = canvas.getContext("2d");
+    const themeStyles = getComputedStyle(document.documentElement);
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
-    ctx.strokeStyle = "#20343e";
+    ctx.strokeStyle = themeStyles.getPropertyValue("--chart-grid").trim() || "#20343e";
     ctx.lineWidth = 1;
     for (let i = 1; i < 5; i++) {
       const y = (height / 5) * i;
@@ -553,7 +881,11 @@
     let min = Math.min(...converted);
     let max = Math.max(...converted);
     if (min === max) { min -= 1; max += 1; }
-    const colors = { 1: "#24d3bd", 2: "#69aefb", 3: "#f1b557" };
+    const colors = {
+      1: themeStyles.getPropertyValue("--teal").trim() || "#24d3bd",
+      2: themeStyles.getPropertyValue("--blue").trim() || "#69aefb",
+      3: themeStyles.getPropertyValue("--amber").trim() || "#f1b557"
+    };
     [1, 2, 3].forEach((channel) => {
       const list = samples.filter((sample) => sample.channel === channel);
       if (!list.length) return;
@@ -647,6 +979,21 @@
     return $("#commandInput").value.replace(/<[^>]+>|\\[rnt]/gi, "").trim();
   }
 
+  function commandDefinition(value) {
+    const normalized = value.trim().toUpperCase();
+    const direct = commands.find((item) =>
+      item.mnemonic.toUpperCase() === normalized ||
+      item.query?.toUpperCase() === normalized ||
+      item.example?.toUpperCase() === normalized
+    );
+    if (direct) return direct;
+    if (state.controllerAdapterId === "vgc031") {
+      const match = normalized.match(/^#[0-9A-F]{2}([A-Z]{2,3}[+-]?)/);
+      if (match) return commands.find((item) => item.mnemonic === match[1]) || null;
+    }
+    return null;
+  }
+
   async function sendComposer() {
     let bytes;
     try {
@@ -660,8 +1007,7 @@
       return;
     }
     const full = commandFromComposer();
-    const mnemonic = full.toUpperCase().split(",")[0];
-    const definition = commands.find((item) => item.mnemonic === mnemonic);
+    const definition = commandDefinition(full);
     if (definition?.risk === "danger") {
       const okay = window.confirm(`${definition.mnemonic}: ${definition.name}\n\n${definition.note || "This command can change controller or process state."}\n\nSend it to the connected device?`);
       if (!okay) return;
@@ -717,11 +1063,16 @@
 
   function startDemo() {
     setConnection("demo");
-    state.identity = { controller: "VGC501", model: "398-481", serial: "1784", firmware: "1.08", hardware: "1.0" };
-    state.session.device = state.identity;
+    acceptIdentity({
+      adapterId: "vgc50x",
+      controller: "VGC501",
+      model: "398-481",
+      serial: "1784",
+      firmware: "1.08",
+      hardware: "1.0"
+    });
     state.unit = "Torr";
-    $("#deviceName").textContent = "VGC501 · 398-481";
-    $("#deviceMeta").textContent = "S/N 1784 · FW 1.08 · demo";
+    $("#deviceMeta").textContent = `${identityMeta(state.identity)} · demo`;
     addSystem("Demo controller connected at 115200 baud. No physical port is being used.");
     toast("Interactive VGC501 demo started.");
   }
@@ -787,12 +1138,15 @@
       ${item.response ? `<div class="detail-block"><span>Response</span><code>${escapeHtml(item.response)}</code></div>` : ""}
       ${item.note ? `<div class="detail-note">${escapeHtml(item.note)}</div>` : ""}
       <div class="detail-actions">
-        <button class="button secondary" id="detailInsert" type="button">Insert example</button>
+        <button class="button secondary" id="detailInsert" type="button">${isParameterized(item) ? "Configure inputs" : "Insert example"}</button>
         <button class="button primary" id="detailQuery" type="button" ${state.connected ? "" : "disabled"}>Query now</button>
       </div>`;
-    $("#detailInsert").addEventListener("click", () => putCommand(item.example));
+    $("#detailInsert").addEventListener("click", () => {
+      if (isParameterized(item)) openGuidedCommand(item);
+      else putCommand(item.example);
+    });
     $("#detailQuery").addEventListener("click", () => {
-      putCommand(item.mnemonic);
+      putCommand(item.query || item.mnemonic);
       sendComposer();
     });
   }
@@ -803,6 +1157,294 @@
     $("#lineEndingSelect").value = "cr";
     previewInput();
     $("#commandInput").focus();
+  }
+
+  function commandParameters(item) {
+    const match = item.syntax.match(/\[\s*,\s*([^\]]+)\]/);
+    return match ? match[1].split(",").map((parameter) => parameter.trim()).filter(Boolean) : [];
+  }
+
+  function isParameterized(item) {
+    return commandParameters(item).length > 0;
+  }
+
+  function parameterLabel(parameter) {
+    const labels = {
+      a: "Formula factor A",
+      b: "Formula factor B",
+      c: "Formula factor C",
+      ch1: "Channel 1 selector",
+      ch2: "Channel 2 selector",
+      ch3: "Channel 3 selector",
+      command: "Logger action",
+      dhcp: "Address assignment",
+      file: "File name",
+      filename: "Log file name",
+      gateway: "Gateway address",
+      ip: "IP address",
+      lower: "Lower pressure threshold",
+      mask: "Subnet mask",
+      offMode: "Turn-off mode",
+      offThreshold: "Turn-off pressure threshold",
+      onMode: "Turn-on mode",
+      onThreshold: "Turn-on pressure threshold",
+      separator: "Decimal separator",
+      set: "Action",
+      upper: "Upper pressure threshold"
+    };
+    if (labels[parameter]) return labels[parameter];
+    const numbered = parameter.match(/^(.+?)([1-6])$/);
+    const plain = (numbered?.[1] ?? parameter)
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replaceAll("_", " ")
+      .replace(/^\w/, (letter) => letter.toUpperCase());
+    return numbered ? `Channel ${numbered[2]} ${plain.toLowerCase()}` : plain;
+  }
+
+  function parameterSpec(item, parameter, index) {
+    const direct = GUIDED_FIELDS[item.mnemonic]?.[parameter];
+    if (direct) return { ...direct };
+
+    const exampleValue = item.example.split(",").slice(1)[index] ?? "";
+    if (/^filter[1-3]$/.test(parameter)) return { ...FILTER_MODE, label: parameterLabel(parameter) };
+    if (/^gas[1-3]$/.test(parameter)) return { ...GAS_TYPE, label: parameterLabel(parameter) };
+    if (/^state[1-3]?$/.test(parameter)) return { ...CHANNEL_STATE, label: parameterLabel(parameter) };
+    if (item.mnemonic === "EUM" && /^mode[1-3]$/.test(parameter)) {
+      return {
+        type: "select",
+        options: choice([["0", "Manual emission"], ["1", "Automatic emission"]]),
+        defaultValue: "1",
+        label: parameterLabel(parameter)
+      };
+    }
+    if (item.mnemonic === "FUM" && /^mode[1-3]$/.test(parameter)) {
+      return {
+        type: "select",
+        options: choice([["0", "Automatic filament"], ["1", "Filament 1"], ["2", "Filament 2"]]),
+        defaultValue: "0",
+        label: parameterLabel(parameter)
+      };
+    }
+    if (item.mnemonic === "DCD" && /^mode[1-3]$/.test(parameter)) {
+      return {
+        type: "select",
+        options: choice([["0", "Automatic"], ["1", "1 digit"], ["2", "2 digits"], ["3", "3 digits"], ["4", "4 digits"]]),
+        defaultValue: "0",
+        label: parameterLabel(parameter)
+      };
+    }
+    if (parameter === "percent") {
+      return {
+        type: "number",
+        min: "0",
+        max: "100",
+        step: "1",
+        defaultValue: exampleValue || "50",
+        label: "Percentage",
+        help: "Enter a whole percentage from 0 to 100."
+      };
+    }
+    if (/^(?:factor|factor[1-3])$/.test(parameter)) {
+      return {
+        type: "number",
+        min: "0.1",
+        max: "10",
+        step: "any",
+        defaultValue: exampleValue || "1",
+        label: parameterLabel(parameter),
+        help: "Use a decimal value from 0.1 to 10."
+      };
+    }
+    if (/threshold|lower|upper|value/i.test(parameter)) {
+      return {
+        type: "number",
+        step: "any",
+        defaultValue: exampleValue,
+        placeholder: "e.g. 1e-6",
+        label: parameterLabel(parameter),
+        help: "Scientific notation such as 1e-6 is accepted."
+      };
+    }
+    if (/^(?:ch[1-3]|channel)$/.test(parameter)) {
+      return {
+        type: "number",
+        min: "0",
+        max: "3",
+        step: "1",
+        defaultValue: exampleValue || String(index + 1),
+        label: parameterLabel(parameter),
+        help: "Channel selectors are 0 through 3."
+      };
+    }
+    if (/^date[1-3]?$/.test(parameter) || parameter === "yyyy-mm-dd") {
+      return {
+        type: "date",
+        defaultValue: exampleValue || new Date().toLocaleDateString("en-CA"),
+        label: parameterLabel(parameter)
+      };
+    }
+    if (parameter === "hh:mm") {
+      return {
+        type: "time",
+        defaultValue: new Date().toTimeString().slice(0, 5),
+        label: "Controller time"
+      };
+    }
+    if (["ip", "mask", "gateway"].includes(parameter)) {
+      return {
+        type: "text",
+        inputMode: "decimal",
+        defaultValue: exampleValue,
+        placeholder: parameter === "mask" ? "255.255.255.0" : "192.168.1.100",
+        label: parameterLabel(parameter)
+      };
+    }
+    if (parameter === "filename" || parameter === "file") {
+      return {
+        type: "text",
+        maxLength: parameter === "filename" ? "7" : undefined,
+        defaultValue: exampleValue,
+        placeholder: parameter === "filename" ? "LOG0001" : "SETUP01",
+        label: parameterLabel(parameter)
+      };
+    }
+    return {
+      type: /mode|code|interval|assignment|pattern/i.test(parameter) ? "number" : "text",
+      step: /mode|code|interval|assignment|pattern/i.test(parameter) ? "1" : undefined,
+      defaultValue: exampleValue,
+      placeholder: `Enter ${parameterLabel(parameter).toLowerCase()}`,
+      label: parameterLabel(parameter)
+    };
+  }
+
+  function selectedGuidedCommand() {
+    return commands.find((item) => item.mnemonic === $("#guidedCommandSelect").value);
+  }
+
+  function setGuidedMode() {
+    const settingValues = $('input[name="guidedMode"]:checked').value === "set";
+    const fields = $("#guidedFields");
+    fields.hidden = !settingValues;
+    $$("[data-parameter]", fields).forEach((input) => {
+      input.disabled = !settingValues;
+    });
+    updateGuidedPreview();
+  }
+
+  function guidedCommandValue(validate = false) {
+    const item = selectedGuidedCommand();
+    if (!item) return null;
+    if ($('input[name="guidedMode"]:checked').value === "query") return item.mnemonic;
+    const form = $("#guidedCommandForm");
+    if (validate && !form.reportValidity()) return null;
+    const values = $$("[data-parameter]", $("#guidedFields")).map((input) => input.value.trim());
+    if (!validate && values.some((value) => !value)) {
+      const specs = commandParameters(item).map((parameter) => `‹${parameterLabel(parameter)}›`);
+      return `${item.mnemonic},${values.map((value, index) => value || specs[index]).join(",")}`;
+    }
+    return `${item.mnemonic},${values.join(",")}`;
+  }
+
+  function updateGuidedPreview() {
+    $("#guidedCommandPreview").textContent = guidedCommandValue(false) || "—";
+  }
+
+  function renderGuidedCommand() {
+    const item = selectedGuidedCommand();
+    if (!item) return;
+    $("#guidedCommandName").textContent = `${item.mnemonic} · ${item.name}`;
+    $("#guidedCommandDescription").textContent = item.description;
+    const risk = $("#guidedCommandRisk");
+    risk.className = `risk-label ${item.risk}`;
+    risk.textContent = item.risk === "danger" ? "Actuates / changes state" :
+      item.risk === "caution" ? "Writes settings" : "Read / low risk";
+    const note = $("#guidedCommandNote");
+    note.hidden = !item.note;
+    note.textContent = item.note;
+
+    const fields = $("#guidedFields");
+    fields.innerHTML = "";
+    commandParameters(item).forEach((parameter, index) => {
+      const spec = parameterSpec(item, parameter, index);
+      const label = document.createElement("label");
+      label.className = "field";
+      const labelText = document.createElement("span");
+      labelText.className = "field-label";
+      labelText.textContent = spec.label || parameterLabel(parameter);
+      label.append(labelText);
+
+      let input;
+      if (spec.type === "select") {
+        input = document.createElement("select");
+        spec.options.forEach((option) => input.add(new Option(option.label, option.value)));
+      } else {
+        input = document.createElement("input");
+        input.type = spec.type || "text";
+        ["min", "max", "step", "maxLength", "inputMode"].forEach((attribute) => {
+          if (spec[attribute] !== undefined) input.setAttribute(attribute, spec[attribute]);
+        });
+        if (spec.placeholder) input.placeholder = spec.placeholder;
+      }
+      input.dataset.parameter = parameter;
+      input.required = true;
+      input.value = spec.defaultValue ?? "";
+      input.addEventListener("input", updateGuidedPreview);
+      input.addEventListener("change", updateGuidedPreview);
+      label.append(input);
+
+      const help = document.createElement("small");
+      help.className = "guided-field-help";
+      help.textContent = spec.help || `Protocol parameter: ${parameter}`;
+      label.append(help);
+      fields.append(label);
+    });
+    setGuidedMode();
+  }
+
+  function openGuidedCommand(item = null) {
+    const select = $("#guidedCommandSelect");
+    if (item && isParameterized(item)) select.value = item.mnemonic;
+    if (!select.value) select.value = "COM";
+    $('input[name="guidedMode"][value="set"]').checked = true;
+    renderGuidedCommand();
+    $("#guidedSendBtn").disabled = !state.connected;
+    if (!$("#guidedCommandDialog").open) $("#guidedCommandDialog").showModal();
+  }
+
+  function initGuidedCommands() {
+    const select = $("#guidedCommandSelect");
+    CATEGORIES.filter((category) => category !== "All").forEach((category) => {
+      const inCategory = commands.filter((item) => item.category === category && isParameterized(item));
+      if (!inCategory.length) return;
+      const group = document.createElement("optgroup");
+      group.label = category;
+      inCategory.forEach((item) => group.append(new Option(`${item.mnemonic} — ${item.name}`, item.mnemonic)));
+      select.append(group);
+    });
+    select.value = "COM";
+    select.addEventListener("change", renderGuidedCommand);
+    $$('input[name="guidedMode"]').forEach((input) => input.addEventListener("change", setGuidedMode));
+    $("#guidedCommandBtn").addEventListener("click", () => openGuidedCommand());
+    $("#guidedInsertBtn").addEventListener("click", () => {
+      const command = guidedCommandValue(true);
+      if (!command) return;
+      $("#guidedCommandDialog").close();
+      putCommand(command);
+      toast(`${command} inserted. Review it, then send when ready.`);
+    });
+    $("#guidedCommandForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const command = guidedCommandValue(true);
+      if (!command) return;
+      if (!state.connected) {
+        toast("Connect to a serial port or start the demo before sending.", "warning");
+        return;
+      }
+      $("#guidedCommandDialog").close();
+      putCommand(command);
+      sendComposer();
+    });
+    renderGuidedCommand();
   }
 
   function initDictionary() {
@@ -836,7 +1478,7 @@
 
   async function persistSession() {
     if (!$("#autosaveCheck")?.checked || !state.db) return;
-    state.session.name = $("#sessionName").value.trim() || "VGC50x session";
+    state.session.name = $("#sessionName").value.trim() || "INFICON controller session";
     state.session.updatedAt = new Date().toISOString();
     state.session.settings = collectSettings();
     try {
@@ -888,10 +1530,13 @@
     state.session.logs ||= [];
     state.session.samples ||= [];
     state.identity = session.device || null;
-    $("#sessionName").value = session.name || "VGC50x session";
+    $("#sessionName").value = session.name || "INFICON controller session";
     if (state.identity) {
+      state.identity.adapterId ||= state.identity.controller === "VGC031" ? "vgc031" : "vgc50x";
+      state.controllerAdapterId = state.identity.adapterId;
+      applyControllerProfile(state.controllerAdapterId);
       $("#deviceName").textContent = `${state.identity.controller} · ${state.identity.model}`;
-      $("#deviceMeta").textContent = `S/N ${state.identity.serial} · FW ${state.identity.firmware}`;
+      $("#deviceMeta").textContent = identityMeta(state.identity);
     }
     state.lastChannels = {};
     state.session.samples.slice(-1000).forEach((sample) => state.lastChannels[sample.channel] = sample);
@@ -918,12 +1563,14 @@
       return;
     }
     await persistSession();
-    state.session = freshSession($("#sessionName").value.trim() || "VGC50x session");
+    state.session = freshSession($("#sessionName").value.trim() || "INFICON controller session");
     state.identity = null;
+    state.controllerAdapterId = null;
+    applyControllerProfile("vgc50x");
     state.unit = "unit";
     state.lastChannels = {};
     $("#deviceName").textContent = "No controller identified";
-    $("#deviceMeta").textContent = "Use AYT after connecting";
+    $("#deviceMeta").textContent = "Identified automatically after connecting";
     [1, 2, 3].forEach((channel) => {
       $(`#channelCard${channel}`).className = "channel-card";
       $(`#channelStatus${channel}`).className = "channel-status idle";
@@ -964,12 +1611,12 @@
   }
 
   function exportSession(type) {
-    state.session.name = $("#sessionName").value.trim() || "VGC50x session";
+    state.session.name = $("#sessionName").value.trim() || "INFICON controller session";
     state.session.settings = collectSettings();
     if (type === "json") {
       download(JSON.stringify(state.session, null, 2), filename("json"), "application/json");
     } else if (type === "transcript") {
-      const header = `VGC50x Serial Console\nSession: ${state.session.name}\nStarted: ${state.session.startedAt}\nDevice: ${state.identity ? JSON.stringify(state.identity) : "not identified"}\n\n`;
+      const header = `INFICON Serial Console\nSession: ${state.session.name}\nStarted: ${state.session.startedAt}\nDevice: ${state.identity ? JSON.stringify(state.identity) : "not identified"}\n\n`;
       const rows = state.session.logs.map((event) => `${event.timestamp}  ${event.direction.toUpperCase().padEnd(6)}  ${event.text}${event.bytes.length ? `  [${asHex(event.bytes)}]` : ""}`);
       download(header + rows.join("\n"), filename("txt", "transcript"), "text/plain");
     } else if (type === "logs") {
@@ -987,7 +1634,7 @@
   async function importSession(file) {
     try {
       const parsed = JSON.parse(await file.text());
-      if (!parsed || !Array.isArray(parsed.logs) || !Array.isArray(parsed.samples)) throw new Error("This is not a VGC50x session export.");
+      if (!parsed || !Array.isArray(parsed.logs) || !Array.isArray(parsed.samples)) throw new Error("This is not an INFICON Serial Console session export.");
       parsed.schema ||= "vgc50x-session/v1";
       parsed.id = crypto.randomUUID();
       parsed.name = `${parsed.name || "Imported session"} (imported)`;
@@ -1038,11 +1685,13 @@
     $("#connectBtn").addEventListener("click", () => state.connected ? disconnect() : connectSerial());
     $("#demoBtn").addEventListener("click", startDemo);
     $("#sendBtn").addEventListener("click", sendComposer);
-    $("#identifyBtn").addEventListener("click", () => {
-      putCommand("AYT");
-      sendComposer();
-    });
-    $$("#quickCommands button").forEach((button) => button.addEventListener("click", () => {
+    $("#identifyBtn").addEventListener("click", identifyController);
+    $$("#quickCommands button[data-command]").forEach((button) => button.addEventListener("click", () => {
+      const item = commands.find((command) => command.mnemonic === button.dataset.command);
+      if (button.dataset.guided === "true" && item) {
+        openGuidedCommand(item);
+        return;
+      }
       putCommand(button.dataset.command);
       sendComposer();
     }));
@@ -1083,7 +1732,9 @@
   }
 
   async function init() {
+    initTheme();
     initDictionary();
+    initGuidedCommands();
     initDialogs();
     initEvents();
     setConnection("offline");

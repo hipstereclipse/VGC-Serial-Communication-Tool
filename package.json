@@ -4,10 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "app": "node scripts/launch.mjs",
     "dev": "vinext dev",
+    "prebuild": "node scripts/clean-build.mjs",
     "build": "vinext build && node scripts/package-sites.mjs",
+    "prebuild:pages": "node scripts/clean-build.mjs",
+    "build:pages": "vinext build && node scripts/package-pages.mjs",
+    "preview:pages": "node scripts/serve-pages.mjs",
     "start": "vinext start",
     "lint:source": "node scripts/validate-source.mjs",
+    "test:controllers": "node scripts/test-controllers.mjs",
     "test:browser": "node scripts/browser-smoke.mjs"
   },
   "dependencies": {

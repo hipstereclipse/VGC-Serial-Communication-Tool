@@ -7,6 +7,7 @@ const required = [
   "app/layout.js",
   "app/page.js",
   "app/globals.css",
+  "public/controllers.js",
   "public/app.js",
   "public/manifest.webmanifest",
   ".openai/hosting.json"
@@ -21,6 +22,8 @@ for (const relative of required) {
 
 const clientSource = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 new vm.Script(clientSource, { filename: "public/app.js" });
+const controllerSource = fs.readFileSync(path.join(root, "public/controllers.js"), "utf8");
+new vm.Script(controllerSource, { filename: "public/controllers.js" });
 
 const manifest = JSON.parse(
   fs.readFileSync(path.join(root, "public/manifest.webmanifest"), "utf8")

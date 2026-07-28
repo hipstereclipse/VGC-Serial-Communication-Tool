@@ -1,5 +1,7 @@
 import Script from "next/script";
 
+export const dynamic = "force-static";
+
 function Icon({ name, size = 18 }) {
   const paths = {
     plug: (
@@ -69,7 +71,22 @@ function Icon({ name, size = 18 }) {
         <path d="m9 12 2 2 4-4" />
       </>
     ),
-    pulse: <path d="M3 12h4l2-6 4 12 2-6h6" />
+    pulse: <path d="M3 12h4l2-6 4 12 2-6h6" />,
+    sun: (
+      <>
+        <circle cx="12" cy="12" r="3.5" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" />
+      </>
+    ),
+    moon: <path d="M20.2 15.3A8.5 8.5 0 0 1 8.7 3.8 8.5 8.5 0 1 0 20.2 15.3z" />,
+    sliders: (
+      <>
+        <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" />
+        <circle cx="16" cy="6" r="2" />
+        <circle cx="8" cy="12" r="2" />
+        <circle cx="13" cy="18" r="2" />
+      </>
+    )
   };
 
   return (
@@ -125,8 +142,8 @@ export default function Page() {
               <Icon name="pulse" size={24} />
             </div>
             <div>
-              <div className="brand-title">VGC50x Serial Console</div>
-              <div className="brand-subtitle">VGC501 · VGC502 · VGC503</div>
+              <div className="brand-title">INFICON Serial Console</div>
+              <div className="brand-subtitle">VGC031 · VGC50x · controller-ready framework</div>
             </div>
           </div>
 
@@ -135,6 +152,21 @@ export default function Page() {
               <span className="status-dot" />
               <span id="connectionPillText">Not connected</span>
             </div>
+            <button
+              className="icon-button labeled theme-toggle"
+              id="themeToggle"
+              type="button"
+              aria-label="Switch to light mode"
+              aria-pressed="false"
+            >
+              <span className="theme-icon theme-icon-sun">
+                <Icon name="sun" />
+              </span>
+              <span className="theme-icon theme-icon-moon">
+                <Icon name="moon" />
+              </span>
+              <span id="themeToggleText">Light</span>
+            </button>
             <button className="icon-button labeled" id="helpBtn" type="button">
               <Icon name="help" />
               <span>Help</span>
@@ -186,11 +218,16 @@ export default function Page() {
                 <label className="field">
                   <span className="field-label">Baud</span>
                   <select id="baudSelect">
+                    <option>300</option>
+                    <option>600</option>
+                    <option>1200</option>
+                    <option>2400</option>
+                    <option>4800</option>
                     <option>9600</option>
                     <option>19200</option>
                     <option>38400</option>
                     <option>57600</option>
-                    <option selected>115200</option>
+                    <option selected>19200</option>
                   </select>
                 </label>
                 <label className="field">
@@ -244,7 +281,7 @@ export default function Page() {
                 </div>
                 <div>
                   <strong id="deviceName">No controller identified</strong>
-                  <span id="deviceMeta">Use AYT after connecting</span>
+                  <span id="deviceMeta">Identified automatically after connecting</span>
                 </div>
               </div>
             </section>
@@ -259,7 +296,7 @@ export default function Page() {
               </div>
               <label className="field">
                 <span className="field-label">Session name</span>
-                <input id="sessionName" defaultValue="VGC50x session" />
+                <input id="sessionName" defaultValue="INFICON controller session" />
               </label>
               <label className="check-row">
                 <input id="autosaveCheck" type="checkbox" defaultChecked />
@@ -307,7 +344,7 @@ export default function Page() {
                     </select>
                   </label>
                   <button className="button secondary" id="identifyBtn" type="button" disabled>
-                    Identify controller
+                    Re-identify controller
                   </button>
                 </div>
               </div>
@@ -366,19 +403,42 @@ export default function Page() {
                   </div>
                   <strong>Ready for a serial connection</strong>
                   <span>
-                    Select COM21 in the browser prompt, connect, then try <code>AYT</code>.
+                    Select a COM port and connect. Safe identity probes run automatically.
                   </span>
                 </div>
               </div>
 
               <div className="quick-commands" id="quickCommands">
-                {["AYT", "PR1", "PRX", "TID", "UNI", "ERR", "MAC", "PNR", "RHR", "TMP", "COM,1"].map(
-                  (command) => (
-                    <button type="button" data-command={command} key={command}>
-                      {command}
+                {[
+                  { command: "AYT" },
+                  { command: "PR1" },
+                  { command: "PRX" },
+                  { command: "TID" },
+                  { command: "ERR" },
+                  { command: "MAC" },
+                  { command: "PNR" },
+                  { command: "RHR" },
+                  { command: "TMP" },
+                  { command: "COM", guided: true },
+                  { command: "UNI", guided: true },
+                  { command: "BAL", guided: true },
+                  { command: "FIL", guided: true },
+                  { command: "GAS", guided: true }
+                ].map(({ command, guided }) => (
+                    <button
+                      type="button"
+                      data-command={command}
+                      data-guided={guided ? "true" : undefined}
+                      title={guided ? `Enter ${command} parameters` : `Send ${command}`}
+                      key={command}
+                    >
+                      {command}{guided ? "…" : ""}
                     </button>
-                  )
-                )}
+                  ))}
+                <button className="guided-command-launch" id="guidedCommandBtn" type="button">
+                  <Icon name="sliders" size={13} />
+                  Inputs…
+                </button>
               </div>
 
               <div className="composer">
@@ -469,13 +529,23 @@ export default function Page() {
           <span>
             <Icon name="shield" size={14} /> Serial traffic and saved sessions stay in this browser.
           </span>
-          <a
-            href="https://www.inficon.com/media/4375/download/Operating-manual-VGC50x.pdf?inline=true&language=en&v=3"
-            target="_blank"
-            rel="noreferrer"
-          >
-            INFICON operating manual
-          </a>
+          <span>
+            <a
+              href="https://www.inficon.com/media/9319/download/Operating-Manual-Vacuum-Gauge-Controller-VGC031.pdf?inline=true&language=en&v=1"
+              target="_blank"
+              rel="noreferrer"
+            >
+              VGC031 manual
+            </a>
+            {" · "}
+            <a
+              href="https://www.inficon.com/media/4375/download/Operating-manual-VGC50x.pdf?inline=true&language=en&v=3"
+              target="_blank"
+              rel="noreferrer"
+            >
+              VGC50x manual
+            </a>
+          </span>
         </footer>
       </div>
 
@@ -483,7 +553,7 @@ export default function Page() {
         <div className="modal-header">
           <div>
             <p className="eyebrow">Guide</p>
-            <h2>Using the VGC50x console</h2>
+            <h2>Using the INFICON console</h2>
           </div>
           <button className="icon-button modal-close" type="button" aria-label="Close help">
             <Icon name="x" />
@@ -515,21 +585,22 @@ export default function Page() {
                   Open this page in current Chrome or Microsoft Edge over HTTPS or localhost.
                 </li>
                 <li>
-                  Choose <strong>Select a serial port</strong> and pick the VGC50x virtual COM
-                  port—COM21 in the current setup.
+                  Choose <strong>Select a serial port</strong> and pick the controller&apos;s COM
+                  port.
                 </li>
                 <li>
-                  Use <strong>115200, 8 data bits, no parity, 1 stop bit, no flow control</strong>,
-                  then connect.
+                  Select the controller&apos;s configured framing. VGC031 defaults to{" "}
+                  <strong>19200, 8 data bits, no parity, 1 stop bit</strong>; VGC50x commonly uses
+                  115200, 8-N-1.
                 </li>
                 <li>
-                  Send <code>AYT</code>. With Auto ENQ enabled, the console requests and displays
-                  the identity record automatically.
+                  Click <strong>Connect</strong>. The console sends only safe read commands and
+                  displays the first verified controller identity.
                 </li>
               </ol>
               <div className="callout">
                 Browsers intentionally show the operating system’s port picker. A website cannot
-                silently open COM21 without your click and permission.
+                silently open a COM port without your click and permission.
               </div>
             </article>
             <article className="help-section" id="help-protocol">
@@ -548,6 +619,11 @@ export default function Page() {
                 Most three-character mnemonics can be queried without parameters or changed by
                 adding comma-separated parameters. Auto ENQ watches for ACK byte <code>0x06</code>{" "}
                 and transmits ENQ byte <code>0x05</code>. NAK is <code>0x15</code>.
+              </p>
+              <p>
+                Quick commands ending in <strong>…</strong> open a guided input form. Use{" "}
+                <strong>Inputs…</strong> to build any parameterized command, preview the exact
+                bytes, and either insert it for review or send it immediately.
               </p>
               <p>
                 Sending any command pauses automatic measurement streaming. Use <code>COM,1</code>{" "}
@@ -590,8 +666,8 @@ export default function Page() {
               <ul className="checklist">
                 <li>Confirm the INFICON virtual port reports connected in its configuration tool.</li>
                 <li>Close other applications that may have exclusive access to the COM port.</li>
-                <li>Verify 115200 / 8-N-1 / no handshake, matching the controller setup.</li>
-                <li>Try AYT with CR and Auto ENQ enabled.</li>
+                <li>Verify the baud and framing match the controller setup (VGC031 defaults to 19200 / 8-N-1).</li>
+                <li>Use Re-identify controller after correcting the serial settings.</li>
                 <li>Use ERR to read a syntax or parameter error after a NAK.</li>
                 <li>Reconnect the virtual port if the network lease changed.</li>
               </ul>
@@ -613,6 +689,76 @@ export default function Page() {
             </article>
           </div>
         </div>
+      </dialog>
+
+      <dialog className="modal small-modal guided-command-modal" id="guidedCommandDialog">
+        <form id="guidedCommandForm">
+          <div className="modal-header">
+            <div>
+              <p className="eyebrow">Guided command</p>
+              <h2>Build a controller command</h2>
+            </div>
+            <button className="icon-button modal-close" type="button" aria-label="Close command builder">
+              <Icon name="x" />
+            </button>
+          </div>
+
+          <div className="guided-command-body">
+            <label className="field">
+              <span className="field-label">Command</span>
+              <select id="guidedCommandSelect" aria-label="Parameterized command" />
+            </label>
+
+            <div className="guided-command-summary">
+              <div>
+                <strong id="guidedCommandName">Choose a command</strong>
+                <span id="guidedCommandDescription" />
+              </div>
+              <span className="risk-label safe" id="guidedCommandRisk">
+                Read / low risk
+              </span>
+            </div>
+
+            <fieldset className="guided-mode">
+              <legend>Action</legend>
+              <label>
+                <input type="radio" name="guidedMode" value="query" />
+                <span>
+                  <strong>Query</strong>
+                  <small>Read the current value</small>
+                </span>
+              </label>
+              <label>
+                <input type="radio" name="guidedMode" value="set" defaultChecked />
+                <span>
+                  <strong>Set values</strong>
+                  <small>Build a command with inputs</small>
+                </span>
+              </label>
+            </fieldset>
+
+            <div className="guided-fields" id="guidedFields" />
+
+            <div className="guided-command-note" id="guidedCommandNote" hidden />
+
+            <div className="guided-preview">
+              <span>Command preview</span>
+              <code id="guidedCommandPreview">—</code>
+            </div>
+          </div>
+
+          <div className="guided-command-actions">
+            <button className="button ghost modal-close" type="button">
+              Cancel
+            </button>
+            <button className="button secondary" id="guidedInsertBtn" type="button">
+              Insert in composer
+            </button>
+            <button className="button primary" id="guidedSendBtn" type="submit">
+              Send command
+            </button>
+          </div>
+        </form>
       </dialog>
 
       <dialog className="modal small-modal" id="exportDialog">
@@ -668,7 +814,8 @@ export default function Page() {
       </dialog>
 
       <div className="toast-region" id="toastRegion" aria-live="polite" />
-      <Script src="/app.js" strategy="afterInteractive" />
+      <Script src="./controllers.js" strategy="afterInteractive" />
+      <Script src="./app.js" strategy="afterInteractive" />
     </>
   );
 }

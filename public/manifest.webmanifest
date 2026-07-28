@@ -1,14 +1,14 @@
 {
-  "name": "VGC50x Serial Console",
-  "short_name": "VGC50x Console",
-  "start_url": "/",
+  "name": "INFICON Serial Console",
+  "short_name": "INFICON Console",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#0b1118",
   "theme_color": "#0b1118",
-  "description": "Local-first Web Serial console for INFICON VGC50x controllers.",
+  "description": "Local-first Web Serial console for INFICON VGC031 and VGC50x controllers, with extension points for VGC083 and VGC094.",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "./icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
