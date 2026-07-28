@@ -1,7 +1,7 @@
 /**
- * VGC50x Serial Console — local launcher.
+ * VGC Serial Communicator — local launcher.
  *
- * Double-click "Launch VGC50x Console.cmd" (Windows) or run `node scripts/launch.mjs`
+ * Double-click "Launch VGC Communicator.cmd" (Windows) or run `node scripts/launch.mjs`
  * (macOS / Linux). This installs dependencies on first run, starts the local
  * development server, and opens the console in your default browser.
  *
@@ -51,8 +51,8 @@ function openBrowser(url) {
 
 async function main() {
   line("");
-  line("  VGC50x Serial Console");
-  line("  ---------------------");
+  line("  VGC Serial Communicator");
+  line("  -----------------------");
 
   if (!existsSync(vinextCli)) {
     line("  Installing dependencies (first run only — this can take a minute)...");

@@ -1,5 +1,5 @@
 @echo off
-title VGC50x Serial Console
+title VGC Serial Communicator
 cd /d "%~dp0"
 
 where node >nul 2>nul
@@ -15,6 +15,6 @@ if errorlevel 1 (
 node "scripts\launch.mjs"
 
 echo.
-echo   The VGC50x Serial Console server has stopped.
+echo   The VGC Serial Communicator server has stopped.
 echo   You can close this window.
 pause >nul

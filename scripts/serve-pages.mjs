@@ -6,7 +6,7 @@ import path from "node:path";
 const output = path.resolve("dist", "client");
 const repositoryName =
   (process.env.GITHUB_REPOSITORY ?? "").split("/")[1] ||
-  "VGC50x-Serial-Communication-Tool";
+  "VGC-Serial-Communicator";
 const basePath = `/${repositoryName}`;
 const port = Number(process.env.PAGES_PREVIEW_PORT ?? 4173);
 const contentTypes = {
