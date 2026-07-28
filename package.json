@@ -1,5 +1,5 @@
 {
-  "name": "vgc50x-serial-console",
+  "name": "vgc-serial-communicator",
   "version": "1.0.0",
   "private": true,
   "type": "module",

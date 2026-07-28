@@ -1,6 +1,6 @@
 {
-  "name": "INFICON Serial Console",
-  "short_name": "INFICON Console",
+  "name": "VGC Serial Communicator",
+  "short_name": "VGC Communicator",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0b1118",

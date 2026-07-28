@@ -1616,7 +1616,7 @@
     if (type === "json") {
       download(JSON.stringify(state.session, null, 2), filename("json"), "application/json");
     } else if (type === "transcript") {
-      const header = `INFICON Serial Console\nSession: ${state.session.name}\nStarted: ${state.session.startedAt}\nDevice: ${state.identity ? JSON.stringify(state.identity) : "not identified"}\n\n`;
+      const header = `VGC Serial Communicator\nSession: ${state.session.name}\nStarted: ${state.session.startedAt}\nDevice: ${state.identity ? JSON.stringify(state.identity) : "not identified"}\n\n`;
       const rows = state.session.logs.map((event) => `${event.timestamp}  ${event.direction.toUpperCase().padEnd(6)}  ${event.text}${event.bytes.length ? `  [${asHex(event.bytes)}]` : ""}`);
       download(header + rows.join("\n"), filename("txt", "transcript"), "text/plain");
     } else if (type === "logs") {
@@ -1634,7 +1634,7 @@
   async function importSession(file) {
     try {
       const parsed = JSON.parse(await file.text());
-      if (!parsed || !Array.isArray(parsed.logs) || !Array.isArray(parsed.samples)) throw new Error("This is not an INFICON Serial Console session export.");
+      if (!parsed || !Array.isArray(parsed.logs) || !Array.isArray(parsed.samples)) throw new Error("This is not a VGC Serial Communicator session export.");
       parsed.schema ||= "vgc50x-session/v1";
       parsed.id = crypto.randomUUID();
       parsed.name = `${parsed.name || "Imported session"} (imported)`;

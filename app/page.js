@@ -142,7 +142,7 @@ export default function Page() {
               <Icon name="pulse" size={24} />
             </div>
             <div>
-              <div className="brand-title">INFICON Serial Console</div>
+              <div className="brand-title">VGC Serial Communicator</div>
               <div className="brand-subtitle">VGC031 · VGC50x · controller-ready framework</div>
             </div>
           </div>
@@ -553,7 +553,7 @@ export default function Page() {
         <div className="modal-header">
           <div>
             <p className="eyebrow">Guide</p>
-            <h2>Using the INFICON console</h2>
+            <h2>Using VGC Serial Communicator</h2>
           </div>
           <button className="icon-button modal-close" type="button" aria-label="Close help">
             <Icon name="x" />

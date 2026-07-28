@@ -15,10 +15,10 @@ const themeBootScript = `
 `;
 
 export const metadata = {
-  title: "INFICON Serial Console",
+  title: "VGC Serial Communicator",
   description:
     "A local-first Web Serial console for INFICON VGC031 and VGC50x vacuum gauge controllers.",
-  applicationName: "INFICON Serial Console",
+  applicationName: "VGC Serial Communicator",
   manifest: "./manifest.webmanifest",
   icons: {
     icon: "./icon.svg"
