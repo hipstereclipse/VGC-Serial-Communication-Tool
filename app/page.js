@@ -638,8 +638,10 @@ export default function Page() {
                   port.
                 </li>
                 <li>
-                  Leave Baud set to <strong>Auto</strong> to try each supported controller&apos;s
-                  factory default first, then every listed baud rate. VGC031 defaults to{" "}
+                  Select the connected controller to send only its safe identity probes. Choose{" "}
+                  <strong>Auto</strong> only when the model is unknown. With Baud set to{" "}
+                  <strong>Auto</strong>, the selected controller&apos;s factory default is tried first,
+                  then every listed baud rate. VGC031 defaults to{" "}
                   <strong>19200, 8 data bits, no parity, 1 stop bit</strong>; VGC50x commonly uses
                   115200, 8-N-1.
                 </li>

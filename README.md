@@ -162,9 +162,8 @@ controller identity is verified:
 
 - **VGC50x** — sends `AYT<CR>`, expects the controller's `ACK` then answers with `ENQ`, and reads
   the identity response (`VGC501,…`).
-- **VGC031** — sends `#01VER<CR>` and requires the documented `05041` software part number, then
-  It also accepts the installed-unit `002733-x` part number, then verifies with a
-  `#01RD<CR>` pressure read.
+- **VGC031** — sends `#01VER<CR>` and accepts the documented `05041-xx` or installed-unit
+  `002733-x` software part number, then verifies with a `#01RD<CR>` pressure read.
 - **VGC083A/B** — sends `#01RF<CR>` (get filament selection) and requires the hot-cathode
   `FIL SEL` response, then verifies with `#01RDCG1<CR>`.
 - **VGC083C** — sends `#01IGS<CR>` (gated to its own probe) and requires the cold-cathode

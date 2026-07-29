@@ -1046,6 +1046,12 @@ textarea:focus {
   font-size: 9px;
 }
 
+/* The command profile hides unused buttons with the HTML hidden attribute.
+   This explicit rule wins over the inline-flex declaration above. */
+.quick-commands button[hidden] {
+  display: none;
+}
+
 .quick-commands button:hover:not(:disabled) {
   border-color: var(--teal-dark);
   color: var(--teal);
