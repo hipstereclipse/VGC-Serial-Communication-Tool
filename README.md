@@ -144,13 +144,10 @@ terminal with simulated traffic — no controller required.
    all adjustable.
 4. Click **Connect**.
 
-Previously granted ports reappear in the **Available ports** dropdown; use the refresh button to
-re-scan.
-
-Web Serial does not expose the Windows COM assignment to a webpage. After selecting a port in the
-browser picker, enter its name (for example, `COM13`) in **Windows port label** so that grant is
-recognizable in the dropdown. **Forget selected** revokes one browser grant; **Forget all ports**
-clears the complete grant list.
+Previously selected ports reappear in the **Saved serial ports** dropdown; use the refresh button
+to re-scan. Web Serial does not expose the Windows COM assignment to a webpage, so the application
+identifies a saved port by its USB vendor and product IDs when the browser provides them. Expand
+**Manage saved port access** only when you need to revoke one permission or clear them all.
 
 ### Automatic identification
 

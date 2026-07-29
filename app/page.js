@@ -195,8 +195,8 @@ export default function Page() {
                   className="icon-button"
                   id="refreshPortsBtn"
                   type="button"
-                  title="Refresh granted ports"
-                  aria-label="Refresh granted ports"
+                  title="Refresh saved ports"
+                  aria-label="Refresh saved ports"
                 >
                   <Icon name="refresh" />
                 </button>
@@ -208,38 +208,39 @@ export default function Page() {
               </div>
 
               <label className="field">
-                <span className="field-label">Available ports</span>
+                <span className="field-label">Saved serial ports</span>
                 <select id="portSelect" aria-label="Available serial ports">
-                  <option value="">No granted ports</option>
+                  <option value="">No saved ports</option>
                 </select>
               </label>
 
-              <label className="field">
-                <span className="field-label">Windows port label</span>
-                <input
-                  id="portLabelInput"
-                  type="text"
-                  placeholder="e.g. COM13"
-                  autoComplete="off"
-                  spellCheck="false"
-                  aria-label="Windows COM port label"
-                />
-              </label>
-
-              <div className="button-row">
-                <button className="button ghost" id="forgetPortBtn" type="button" disabled>
-                  <Icon name="trash" />
-                  Forget selected
-                </button>
-                <button className="button ghost" id="forgetAllPortsBtn" type="button" disabled>
-                  <Icon name="trash" />
-                  Forget all ports
-                </button>
-              </div>
+              <details className="port-permissions">
+                <summary>Manage saved port access</summary>
+                <div className="port-access-actions" role="group" aria-label="Manage saved port access">
+                  <button
+                    className="button ghost port-access-action"
+                    id="forgetPortBtn"
+                    type="button"
+                    disabled
+                  >
+                    <Icon name="trash" />
+                    <span>Forget selected port</span>
+                  </button>
+                  <button
+                    className="button ghost port-access-action port-access-action-danger"
+                    id="forgetAllPortsBtn"
+                    type="button"
+                    disabled
+                  >
+                    <Icon name="trash" />
+                    <span>Forget every saved port</span>
+                  </button>
+                </div>
+              </details>
 
               <button className="button secondary full" id="requestPortBtn" type="button">
                 <Icon name="plug" />
-                Select a serial port
+                Choose a serial port
               </button>
 
               <div className="settings-grid">
@@ -435,7 +436,7 @@ export default function Page() {
                   </div>
                   <strong>Ready for a serial connection</strong>
                   <span>
-                    Select a COM port and connect. Safe identity probes run automatically.
+                    Choose a serial port and connect. Safe identity probes run automatically.
                   </span>
                 </div>
               </div>
