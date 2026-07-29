@@ -22,6 +22,7 @@
   const TOKEN_BYTES = { CR: 13, LF: 10, ENQ: 5, ACK: 6, NAK: 21, ETX: 3, TAB: 9, NUL: 0 };
   const CONTROL_NAMES = { 0: "NUL", 3: "ETX", 5: "ENQ", 6: "ACK", 9: "TAB", 10: "LF", 13: "CR", 21: "NAK" };
   const AUTO_BAUD_VALUE = "auto";
+  const AUTO_CONTROLLER_VALUE = "auto";
   const choice = (values) => values.map(([value, label]) => ({ value, label }));
   const ON_OFF = choice([["0", "Off"], ["1", "On"]]);
   const CHANNEL_STATE = { type: "select", options: ON_OFF, defaultValue: "0", help: "Choose the state for this channel." };
@@ -358,6 +359,7 @@
     return {
       baudRate: baudValue === AUTO_BAUD_VALUE ? null : Number(baudValue),
       autoBaud: baudValue === AUTO_BAUD_VALUE,
+      controllerId: $("#controllerSelect").value,
       dataBits: Number($("#dataBitsSelect").value),
       stopBits: Number($("#stopBitsSelect").value),
       parity: $("#paritySelect").value,
@@ -377,12 +379,19 @@
     return state.serialSettings || collectSettings();
   }
 
-  function autoBaudScanPlan() {
+  function selectedControllerAdapters() {
+    const adapterId = $("#controllerSelect").value;
+    if (adapterId === AUTO_CONTROLLER_VALUE) return controllerRegistry.implemented;
+    const adapter = controllerRegistry.get(adapterId);
+    return adapter?.implementation === "complete" ? [adapter] : controllerRegistry.implemented;
+  }
+
+  function autoBaudScanPlan(adapters = selectedControllerAdapters()) {
     const availableRates = $$("#baudSelect option")
       .map((option) => Number(option.value))
       .filter(Number.isFinite);
     const adaptersByDefaultRate = new Map();
-    for (const adapter of controllerRegistry.implemented) {
+    for (const adapter of adapters) {
       const rate = adapter.manualDefaults?.baudRate;
       if (!availableRates.includes(rate)) continue;
       if (!adaptersByDefaultRate.has(rate)) adaptersByDefaultRate.set(rate, []);
@@ -392,7 +401,8 @@
     return [
       ...defaultRates.map((baudRate) => ({ baudRate, adapters: adaptersByDefaultRate.get(baudRate) })),
       ...availableRates
-        .map((baudRate) => ({ baudRate, adapters: controllerRegistry.implemented }))
+        .filter((baudRate) => !adaptersByDefaultRate.has(baudRate))
+        .map((baudRate) => ({ baudRate, adapters }))
     ];
   }
 
@@ -559,7 +569,7 @@
     $("#refreshPortsBtn").disabled = state.connected || searching || !("serial" in navigator);
     $("#portSelect").disabled = state.connected || searching;
     syncPortControls();
-    ["baudSelect", "dataBitsSelect", "paritySelect", "stopBitsSelect", "flowControlSelect"].forEach((id) => {
+    ["controllerSelect", "baudSelect", "dataBitsSelect", "paritySelect", "stopBitsSelect", "flowControlSelect"].forEach((id) => {
       $(`#${id}`).disabled = state.connected || searching;
     });
     $("#sendBtn").disabled = !state.connected;
@@ -685,7 +695,7 @@
     });
   }
 
-  async function identifyController({ adapters = controllerRegistry.implemented, autoBaud = false } = {}) {
+  async function identifyController({ adapters = selectedControllerAdapters(), autoBaud = false } = {}) {
     if (!state.connected || state.demo || state.identifying) return state.identity;
     state.identifying = true;
     state.identity = null;
@@ -772,14 +782,15 @@
     setConnection("offline");
     try {
       const requestedSettings = collectSettings();
+      const adapters = selectedControllerAdapters();
       if (!requestedSettings.autoBaud) {
         await openSerial(requestedSettings);
         toast("Serial connection opened.");
-        await identifyController();
+        await identifyController({ adapters });
         return;
       }
 
-      for (const { baudRate, adapters } of autoBaudScanPlan()) {
+      for (const { baudRate, adapters: scanAdapters } of autoBaudScanPlan(adapters)) {
         if (!state.connecting) break;
         const settings = { ...requestedSettings, baudRate, autoBaud: true };
         $("#deviceName").textContent = "Scanning for controller...";
@@ -787,7 +798,7 @@
         $("#trafficStatus").textContent = `Auto baud scan: ${baudRate} baud`;
         addSystem(`Auto baud scan: trying ${baudRate} baud, ${framingLabel(settings)}.`);
         await openSerial(settings);
-        const identity = await identifyController({ adapters, autoBaud: true });
+        const identity = await identifyController({ adapters: scanAdapters, autoBaud: true });
         if (identity) {
           addSystem(`Auto baud scan identified ${identity.controller} at ${baudRate} baud.`);
           toast(`${identity.controller} detected at ${baudRate} baud.`);

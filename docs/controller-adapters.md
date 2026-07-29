@@ -53,8 +53,8 @@ Uses the documented factory defaults of 19200 baud, 8-N-1, and address `01`.
 All commands begin with `#`, responses begin with `*`, and frames end in CR.
 
 - Probe: `#01VER<CR>`
-- Identity signature: software part number `05041` from the documented `VER`
-  response
+- Identity signature: the documented `05041` or installed-unit `002733`
+  software part number from the `VER` response
 - Verification/pressure read: `#01RD<CR>`
 - Pressure unit: Torr
 - Product part number: 399-570

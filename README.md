@@ -137,7 +137,9 @@ terminal with simulated traffic — no controller required.
 1. Open the app in Chrome or Edge over HTTPS or localhost.
 2. Click **Select a serial port** and choose the controller's COM port from the browser's port
    picker. (Browsers deliberately require this click — a website cannot silently open a port.)
-3. Leave **Baud** at **Auto** to try the factory baud rate for each supported controller family
+3. Set **Controller** to the model you connected so the app sends only that model's safe identity
+   probes. Leave it at **Auto** only when the model is unknown and you want it to check every
+   supported controller. Leave **Baud** at **Auto** to try the selected model's factory baud rate
    first, followed by every listed baud rate. Select a numeric baud rate to make one specific
    connection attempt. VGC031 defaults to **19200, 8 data bits, no parity, 1 stop bit**; VGC50x
    controllers commonly use **115200, 8-N-1**. Data bits, parity, stop bits, and flow control are
@@ -151,15 +153,18 @@ identifies a saved port by its USB vendor and product IDs when the browser provi
 
 ### Automatic identification
 
-On connect, the app runs each implemented adapter's **read-only probe steps** and routes every
-complete response line through the adapters' `identify()` matchers. With **Baud = Auto**, it tries
-the documented factory baud rates first, then each value in the Baud list, reopening the
-same granted port at each rate until a controller identity is verified:
+On connect, the app runs the selected controller's **read-only probe steps** and routes every
+complete response line through the adapters' `identify()` matchers. With **Controller = Auto**,
+it checks every supported controller; otherwise it sends probes only for the selected model.
+With **Baud = Auto**, it tries the selected controller's documented factory baud rate first, then
+each remaining value in the Baud list, reopening the same granted port at each rate until a
+controller identity is verified:
 
 - **VGC50x** — sends `AYT<CR>`, expects the controller's `ACK` then answers with `ENQ`, and reads
   the identity response (`VGC501,…`).
 - **VGC031** — sends `#01VER<CR>` and requires the documented `05041` software part number, then
-  verifies with a `#01RD<CR>` pressure read.
+  It also accepts the installed-unit `002733-x` part number, then verifies with a
+  `#01RD<CR>` pressure read.
 - **VGC083A/B** — sends `#01RF<CR>` (get filament selection) and requires the hot-cathode
   `FIL SEL` response, then verifies with `#01RDCG1<CR>`.
 - **VGC083C** — sends `#01IGS<CR>` (gated to its own probe) and requires the cold-cathode

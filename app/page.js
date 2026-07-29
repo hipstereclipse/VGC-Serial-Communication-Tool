@@ -4,7 +4,7 @@ export const dynamic = "force-static";
 
 // These files are served from public/ and are not content-hashed by the static export.
 // Keep the page and serial client in lockstep after a deploy or local update.
-const publicClientVersion = "20260729-serial-port-fix";
+const publicClientVersion = "20260729-controller-selection";
 
 function Icon({ name, size = 18 }) {
   const paths = {
@@ -246,6 +246,18 @@ export default function Page() {
                 <Icon name="plug" />
                 Choose a serial port
               </button>
+
+              <label className="field">
+                <span className="field-label">Controller</span>
+                <select id="controllerSelect" defaultValue="auto">
+                  <option value="auto">Auto — detect all supported controllers</option>
+                  <option value="vgc031">VGC031</option>
+                  <option value="vgc50x">VGC501 / VGC502 / VGC503</option>
+                  <option value="vgc083a">VGC083A / VGC083B</option>
+                  <option value="vgc083c">VGC083C</option>
+                  <option value="vgc094">VGC094</option>
+                </select>
+              </label>
 
               <div className="settings-grid">
                 <label className="field">

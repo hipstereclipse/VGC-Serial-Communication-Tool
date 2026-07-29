@@ -106,10 +106,11 @@
       const activeThisAdapter =
         context.activeAdapterId === "vgc031" && context.command === "#01VER";
       if (!probingThisAdapter && !activeThisAdapter) return null;
-      // 05041 is the VGC031 software part number shown by the manual's VER
-      // response. Requiring it avoids claiming another Mini-Convectron-
-      // compatible controller that happens to implement the same protocol.
-      const match = line.match(/^\*([0-9A-F]{2})[ _]?(05041-\d{2})\s*$/i);
+      // The VGC031 manual shows 05041-xx, while installed VGC031 units also
+      // report the 002733-x software part number. Keep the accepted part
+      // numbers explicit so another addressed controller with a generic VER
+      // response cannot be mislabeled as a VGC031.
+      const match = line.match(/^\*([0-9A-F]{2})[ _]?((?:05041|002733)-\d{1,2})\s*$/i);
       if (!match) return null;
       return {
         adapterId: "vgc031",

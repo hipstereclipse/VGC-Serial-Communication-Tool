@@ -41,6 +41,13 @@ assert.equal(vgc031Identity.controller, "VGC031");
 assert.equal(vgc031Identity.model, "399-570");
 assert.equal(vgc031Identity.address, "01");
 assert.equal(vgc031Identity.firmware, "05041-00");
+const installedVgc031Identity = registry.identify(
+  "*01 002733-1",
+  { probeAdapterId: "vgc031", command: "#01VER" }
+);
+assert.equal(installedVgc031Identity.controller, "VGC031");
+assert.equal(installedVgc031Identity.address, "01");
+assert.equal(installedVgc031Identity.firmware, "002733-1");
 assert.equal(
   registry.identify("*01_01961-113", { probeAdapterId: "vgc031", command: "#01VER" }),
   null,
