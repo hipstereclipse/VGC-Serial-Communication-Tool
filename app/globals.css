@@ -18,6 +18,7 @@
   --red-soft: rgba(239, 108, 112, 0.12);
   --blue: #69aefb;
   --blue-soft: rgba(105, 174, 251, 0.12);
+  --violet: #b98cf6;
   --topbar-bg: rgba(7, 16, 22, 0.94);
   --rail-bg: #09141b;
   --input-bg: #09151c;
@@ -62,6 +63,7 @@
   --red-soft: rgba(184, 61, 71, 0.09);
   --blue: #256fae;
   --blue-soft: rgba(37, 111, 174, 0.1);
+  --violet: #7a4fc0;
   --topbar-bg: rgba(243, 246, 247, 0.94);
   --rail-bg: #edf2f4;
   --input-bg: #ffffff;
@@ -654,7 +656,7 @@ textarea:focus {
 
 .channel-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 

@@ -70,12 +70,16 @@ dictionary, and export the whole session.
 |------------|---------|--------------|------------------------|-------|
 | VGC501 / VGC502 / VGC503 | `VGC50x` | ✅ Complete | 115200, 8-N-1 | `AYT` → `ACK`/`ENQ` identity handshake |
 | VGC031     | `VGC031` | ✅ Complete | 19200, 8-N-1, address `01` | `#`-prefixed commands, `*` responses, Torr |
-| VGC083A / B / C | `VGC083` | 🧩 Skeleton | 19200, 8-N-1 | Registered but inert — no probing yet |
-| VGC094     | `VGC094` | 🧩 Skeleton | 19200, 8-N-1 | Registered but inert — no probing yet |
+| VGC083A / VGC083B | `VGC083` | ✅ Complete | 19200, 8-N-1, address `01` | `#`-addressed INFICON protocol; hot-cathode A/B are wire-identical and auto-ID together via `#01RF` |
+| VGC083C    | `VGC083` | ✅ Complete | 19200, 8-N-1, address `01` | Cold-cathode variant; auto-ID via `#01IGS`, gated so it never claims a hot-cathode unit |
+| VGC094     | `VGC094` | ✅ Complete | 115200, 8-N-1 | `AYT` → `ACK`/`ENQ` handshake; four channels (A1/A2/B1/B2); enable Auto ENQ |
 
-Skeleton adapters are intentionally disabled: their probe steps, command lists, and parsers are
-empty so they can never accidentally claim a connected device. See
-[Extending](#extending-the-controller-adapter-framework) to implement them.
+Every registered adapter now probes and parses. Identity matchers are deliberately conservative:
+each requires a model-specific signature under its own probe, so one controller is never mistaken
+for another. VGC083A and VGC083B share identical firmware and cannot be told apart on the serial
+interface, so they identify together as **VGC083A/B**; select commands by your degas type (A =
+electron-bombardment, B = I²R resistive). See
+[Extending](#extending-the-controller-adapter-framework) for the adapter framework.
 
 Manufacturer references:
 [VGC031 operating manual](https://www.inficon.com/media/9319/download/Operating-Manual-Vacuum-Gauge-Controller-VGC031.pdf?inline=true&language=en&v=1)
@@ -150,6 +154,12 @@ complete response line through the adapters' `identify()` matchers:
   the identity response (`VGC501,…`).
 - **VGC031** — sends `#01VER<CR>` and requires the documented `05041` software part number, then
   verifies with a `#01RD<CR>` pressure read.
+- **VGC083A/B** — sends `#01RF<CR>` (get filament selection) and requires the hot-cathode
+  `FIL SEL` response, then verifies with `#01RDCG1<CR>`.
+- **VGC083C** — sends `#01IGS<CR>` (gated to its own probe) and requires the cold-cathode
+  `IG_OFF`/`IG_ON` status response.
+- **VGC094** — sends `AYT<CR>` (same `ACK`/`ENQ` handshake as VGC50x) and requires the
+  `VGC094,398-401,…` identity, then verifies with a `PRX<CR>` all-channel read.
 
 Identity matchers are deliberately conservative so one controller is never mistaken for another.
 Use **Re-identify controller** after changing serial settings.
@@ -158,7 +168,8 @@ Use **Re-identify controller** after changing serial settings.
 
 ![Live measurements](docs/screenshots/02-live-measurements.png)
 
-- Up to **three channel cards** show status, value, unit, and age of the last reading.
+- Up to **four channel cards** show status, value, unit, and age of the last reading (VGC094 uses
+  all four: A1, A2, B1, B2; other controllers use one to three).
 - A **pressure trend** chart plots incoming samples with **Log** or **Linear** scaling.
 - Status codes are decoded: `0` Okay, `1` Underrange, `2` Overrange, `3` Sensor error, `4` Sensor
   off, `5` No sensor, `6` Identification error, `7` Gauge error.
@@ -259,6 +270,23 @@ comma-separated parameters. **Auto ENQ after ACK** watches for the `ACK` byte `0
 Commands begin with `#`, responses begin with `*`, frames end in `CR`, and the factory address is
 `01` (e.g. `#01RD<CR>` → `*01 y.yyEzpp`). Pressure is reported in Torr.
 
+**VGC083 — addressed INFICON protocol**
+
+The same `#aa…` / `*aa…` framing as VGC031 with the factory INFICON COM type. Read the ion gauge
+with `#01RDIG<CR>` and the convection gauges with `#01RDCG1<CR>` / `#01RDCG2<CR>`; an ion gauge
+that is off or an over-ranged gauge returns the `1.10E+03` sentinel. Hot-cathode units (A/B) add
+filament, emission, and degas commands and the `#01RF` filament read used for identification; the
+cold-cathode C has none of those. Set/actuate commands (`IG1`, `DG1`, `SE`, `TZCGn`, …) are flagged
+**danger**. If the controller is switched to a Granville-Phillips (GP 307/358/350) compatibility
+COM type, restore the INFICON mode for automatic identification to work.
+
+**VGC094 — mnemonics with ACK/ENQ**
+
+Three-character mnemonics framed with `CR`, using the same `ACK`/`ENQ` handshake as VGC50x — enable
+**Auto ENQ after ACK**. `AYT` returns `VGC094,398-401,…`. Read one channel with `PA1`/`PA2`/`PB1`/
+`PB2` or all four with `PRX`; `COM,1` streams every second. Note the VGC094 gas-correction code
+order (`GAS`) differs from the VGC50x — the guided builder uses the correct VGC094 order.
+
 ---
 
 ## Project structure
@@ -337,7 +365,7 @@ model-specific signature), and automatic probing must contain **read-only comman
 Configuration, calibration, relay, reset, emission, and degas commands belong in the command
 dictionary with `risk: "danger"`.
 
-Full details and a walkthrough for the VGC083/VGC094 skeletons are in
+Full details, plus how the VGC083 and VGC094 adapters are built, are in
 [docs/controller-adapters.md](docs/controller-adapters.md).
 
 Run `npm run test:controllers` after changing adapters.

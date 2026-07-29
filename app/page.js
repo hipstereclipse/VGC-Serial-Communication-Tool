@@ -143,7 +143,7 @@ export default function Page() {
             </div>
             <div>
               <div className="brand-title">VGC Serial Communicator</div>
-              <div className="brand-subtitle">VGC031 · VGC50x · controller-ready framework</div>
+              <div className="brand-subtitle">VGC031 · VGC50x · VGC083 · VGC094</div>
             </div>
           </div>
 
@@ -227,7 +227,7 @@ export default function Page() {
                     <option>19200</option>
                     <option>38400</option>
                     <option>57600</option>
-                    <option selected>19200</option>
+                    <option selected>115200</option>
                   </select>
                 </label>
                 <label className="field">
@@ -353,6 +353,7 @@ export default function Page() {
                 <ChannelCard channel={1} />
                 <ChannelCard channel={2} />
                 <ChannelCard channel={3} />
+                <ChannelCard channel={4} />
               </div>
 
               <div className="trend-card">

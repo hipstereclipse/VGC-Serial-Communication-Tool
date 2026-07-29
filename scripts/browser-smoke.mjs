@@ -141,8 +141,8 @@ try {
     value?.samples >= 3,
     value?.dictionary === "83/83",
     value?.rows >= 6,
-    value?.implementedAdapters?.join(",") === "vgc50x,vgc031",
-    value?.skeletonAdapters?.join(",") === "vgc083a,vgc083b,vgc083c,vgc094",
+    value?.implementedAdapters?.join(",") === "vgc50x,vgc031,vgc083a,vgc083b,vgc083c,vgc094",
+    value?.skeletonAdapters?.join(",") === "",
     value?.vgc031Commands === 19
   ];
   if (checks.some((check) => !check)) {

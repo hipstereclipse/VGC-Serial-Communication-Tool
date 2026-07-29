@@ -17,13 +17,27 @@ Each adapter has:
 - `verifyStep`: an optional second read sent only after identity is verified.
 - `identify(line, context)`: returns a normalized identity or `null`.
 - `parseMeasurement(line, context)`: returns zero or more normalized pressure
-  samples.
+  samples (channel 1–4, `status`, `value`, `rawValue`, and optional `unit`).
 - `commands`: optional controller-specific command reference entries.
+
+The UI also reads these optional adapter fields when present, so a new
+controller can be added without editing `public/app.js`:
+
+- `quickCommands`: `[{ value, title, guided? }]` — the terminal quick-command
+  buttons for this controller.
+- `showGuidedBuilder`: `true` to keep the guided-command builder (comma
+  parameter protocols); omit for positional/addressed protocols.
+- `addressed`: `true` for `#aa…` framed protocols — used to resolve the
+  leading mnemonic for risk confirmation regardless of the device address.
+- `defaultUnit`: the pressure unit assumed after identification when the
+  protocol has no unit read-back.
+- `detail`: a short identity line shown when the AYT-style serial/firmware
+  fields are not available.
 
 Identity matchers must be conservative. A generic version-number response is
 not enough when multiple controller families can produce the same shape. Use
-the active probe command plus a model-specific signature, or leave the adapter
-as a skeleton.
+the active probe command plus a model-specific signature. When two models are
+indistinguishable on the wire, identify them together and document it.
 
 ## Implemented adapters
 
@@ -47,20 +61,40 @@ All commands begin with `#`, responses begin with `*`, and frames end in CR.
 If the front-panel baud, framing, or address was changed, select the matching
 serial settings and edit the address in commands before use.
 
-## Skeletons
+### VGC083 A / B / C
 
-`vgc083a`, `vgc083b`, `vgc083c`, and `vgc094` are registered but disabled.
-Their `probeSteps`, commands, and parsers are intentionally empty, so they
-cannot claim a device accidentally.
+Uses the factory INFICON RS232/RS485 command protocol: host frames begin with
+`#aa` (address, default `01`), responses begin with `*aa`, errors with `?aa`,
+and frames end in CR. There is no ACK/ENQ handshake. Pressure follows the
+front-panel unit (Torr by default); an ion gauge that is off, an over-ranged
+convection gauge, or an unpowered analog input all report the `1.10E+03`
+over-range sentinel.
 
-For VGC083 work, first choose which configured protocol is supported (INFICON
-RS232/RS485 or one of the GP compatibility modes). Then add a model-specific
-identity signature that distinguishes A, B, and C before changing
-`implementation` to `"complete"`.
+- **VGC083A / VGC083B (hot cathode).** A and B share identical firmware and are
+  indistinguishable on the serial interface (they differ only in the attached
+  gauge head and degas method), so both auto-identify as the combined
+  **VGC083A/B** (adapter `vgc083a`; `vgc083b` is a wire-identical alias that
+  never self-claims). Probe: `#01RF` (get filament selection — only hot-cathode
+  units answer it). Verification: `#01RDCG1`.
+- **VGC083C (cold cathode).** No filament, degas, or emission commands. Probe:
+  `#01IGS`, gated to its own probe so it can never claim a hot-cathode unit that
+  answers the same status read; the hot-cathode `#01RF` probe runs first, so a
+  hot-cathode unit is already claimed before the cold-cathode probe would run.
 
-For VGC094, select the installed plug-in interface/board and its applicable
-communication manual before implementing the transport. The plug-in-board
-operating manual alone does not define one universal serial identity exchange.
+These adapters assume the factory INFICON protocol. If the controller is set to
+a Granville-Phillips (GP 307/358/350) compatibility mode instead, the `#aa`
+probes will not match — restore the INFICON COM type or use the terminal.
+
+### VGC094
+
+Uses the INFICON mnemonics protocol with the same ACK/ENQ handshake as the
+VGC50x: enable **Auto ENQ after ACK**. Probe: `AYT`, which returns
+`VGC094,398-401,serial,firmware,hardware`; identification requires both the
+`VGC094` model name and the `398-401` product part number. Four measurement
+channels (A1, A2, B1, B2) map to console channels 1–4. `PA1`/`PA2`/`PB1`/`PB2`
+read one channel; `PRX` and `COM` frames carry all four. RS485 additionally
+prefixes an `<ESC>`+address node selector, which the console does not send by
+default.
 
 ## Safety rule
 

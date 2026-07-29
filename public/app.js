@@ -17,7 +17,7 @@
     6: ["Identification error", "bad"],
     7: ["Gauge error", "bad"]
   };
-  const UNITS = ["mbar", "Torr", "Pa", "micron", "hPa", "Volt"];
+  const UNITS = ["mbar", "Torr", "Pa", "micron", "hPa", "Volt", "Ampere"];
   const CATEGORIES = ["All", "Measurement", "Switching", "Gauge", "Gauge control", "General", "Logger", "Transfer & test", "Network"];
   const TOKEN_BYTES = { CR: 13, LF: 10, ENQ: 5, ACK: 6, NAK: 21, ETX: 3, TAB: 9, NUL: 0 };
   const CONTROL_NAMES = { 0: "NUL", 3: "ETX", 5: "ENQ", 6: "ACK", 9: "TAB", 10: "LF", 13: "CR", 21: "NAK" };
@@ -502,7 +502,7 @@
     if (identity.serial) details.push(`S/N ${identity.serial}`);
     if (identity.firmware) details.push(`FW ${identity.firmware}`);
     if (identity.hardware) details.push(`HW ${identity.hardware}`);
-    return details.join(" · ") || "Identity response verified";
+    return details.join(" · ") || identity.detail || "Identity response verified";
   }
 
   function applyControllerProfile(adapterId) {
@@ -513,6 +513,7 @@
     if ($("#commandSearch")) $("#commandSearch").value = "";
     renderCategories();
     renderCommands();
+    rebuildGuidedCommandOptions();
     $("#commandDetail").innerHTML = `
       <div class="command-detail-empty">
         <strong>${escapeHtml(adapter?.label || "Controller")} commands loaded</strong>
@@ -520,15 +521,28 @@
       </div>`;
 
     const buttons = $$("#quickCommands button[data-command]");
-    const vgc031Quick = [
-      ["#01RD", "Read pressure"],
-      ["#01VER", "Read firmware"],
-      ["#01RL+", "Relay 1 on point"],
-      ["#01RL-", "Relay 1 off point"],
-      ["#01RH+", "Relay 2 on point"],
-      ["#01RH-", "Relay 2 off point"]
-    ];
-    if (adapterId === "vgc031") {
+    if (adapter?.quickCommands?.length) {
+      // Adapter-driven quick buttons (VGC083 addressed reads, VGC094 mnemonics).
+      buttons.forEach((button, index) => {
+        const spec = adapter.quickCommands[index];
+        button.hidden = !spec;
+        if (!spec) return;
+        button.dataset.command = spec.value;
+        if (spec.guided) button.dataset.guided = "true";
+        else delete button.dataset.guided;
+        button.textContent = `${spec.value}${spec.guided ? "…" : ""}`;
+        button.title = spec.title || (spec.guided ? `Enter ${spec.value} parameters` : `Send ${spec.value}`);
+      });
+      $("#guidedCommandBtn").hidden = !adapter.showGuidedBuilder;
+    } else if (adapterId === "vgc031") {
+      const vgc031Quick = [
+        ["#01RD", "Read pressure"],
+        ["#01VER", "Read firmware"],
+        ["#01RL+", "Relay 1 on point"],
+        ["#01RL-", "Relay 1 off point"],
+        ["#01RH+", "Relay 2 on point"],
+        ["#01RH-", "Relay 2 off point"]
+      ];
       buttons.forEach((button, index) => {
         const spec = vgc031Quick[index];
         button.hidden = !spec;
@@ -563,6 +577,9 @@
     state.controllerAdapterId = identity.adapterId;
     state.session.device = identity;
     if (identity.adapterId === "vgc031") state.unit = "Torr";
+    else if (controllerRegistry.get(identity.adapterId)?.defaultUnit) {
+      state.unit = controllerRegistry.get(identity.adapterId).defaultUnit;
+    }
     $("#deviceName").textContent = `${identity.controller}${identity.model ? ` · ${identity.model}` : ""}`;
     $("#deviceMeta").textContent = identityMeta(identity);
     applyControllerProfile(identity.adapterId);
@@ -800,12 +817,18 @@
       const code = Number(line.split(",")[0]);
       if (UNITS[code]) {
         state.unit = UNITS[code];
-        [1, 2, 3].forEach((channel) => $(`#channelUnit${channel}`).textContent = state.unit);
+        [1, 2, 3, 4].forEach((channel) => $(`#channelUnit${channel}`).textContent = state.unit);
       }
     }
-    const pairs = state.controllerAdapterId === "vgc031"
-      ? []
-      : [...line.matchAll(/(?:^|,)([0-7]),([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?)/gi)];
+    // Generic status,value pair matching is a VGC50x behavior (and a fallback
+    // while the controller is still unidentified). Adapters with their own
+    // parseMeasurement (VGC031, VGC083, VGC094) own their measurement lines.
+    const genericPairs =
+      (!state.controllerAdapterId || state.controllerAdapterId === "vgc50x") &&
+      !adapterMeasurements.length;
+    const pairs = genericPairs
+      ? [...line.matchAll(/(?:^|,)([0-7]),([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?)/gi)]
+      : [];
     if (pairs.length) {
       let baseChannel = 1;
       const match = pending.match(/^PR([123])$/);
@@ -816,7 +839,7 @@
   }
 
   function recordMeasurement(channel, status, value, rawValue) {
-    if (channel < 1 || channel > 3 || !Number.isFinite(value)) return;
+    if (channel < 1 || channel > 4 || !Number.isFinite(value)) return;
     const sample = {
       timestamp: new Date().toISOString(),
       channel,
@@ -884,9 +907,10 @@
     const colors = {
       1: themeStyles.getPropertyValue("--teal").trim() || "#24d3bd",
       2: themeStyles.getPropertyValue("--blue").trim() || "#69aefb",
-      3: themeStyles.getPropertyValue("--amber").trim() || "#f1b557"
+      3: themeStyles.getPropertyValue("--amber").trim() || "#f1b557",
+      4: themeStyles.getPropertyValue("--violet").trim() || "#b98cf6"
     };
-    [1, 2, 3].forEach((channel) => {
+    [1, 2, 3, 4].forEach((channel) => {
       const list = samples.filter((sample) => sample.channel === channel);
       if (!list.length) return;
       ctx.beginPath();
@@ -979,6 +1003,34 @@
     return $("#commandInput").value.replace(/<[^>]+>|\\[rnt]/gi, "").trim();
   }
 
+  function addressedDefinition(normalized) {
+    // Addressed #aa… protocols (VGC031, VGC083): strip the two-hex address and
+    // match a dictionary mnemonic at the head of the command, so a command sent
+    // to a non-default address still resolves for risk confirmation. A trailing
+    // lowercase "n" in a mnemonic (RLn, TZCGn, TSCGn) is a one-digit channel
+    // placeholder; every other character is literal, and the mnemonic must end
+    // on a non-letter boundary. That keeps RDIG from swallowing RDIGE and SE
+    // from swallowing SES, resolves IG0/IG1 (and DG0/DG1) to distinct entries,
+    // and still matches value commands like SB/SA/TS/TZ regardless of the value
+    // typed. The longest matching mnemonic wins (RLn over RL).
+    const body = normalized.replace(/^#[0-9A-F]{2}/, "");
+    if (!body) return null;
+    let best = null;
+    for (const item of commands) {
+      const channelPlaceholder = /n$/.test(item.mnemonic);
+      const core = (channelPlaceholder ? item.mnemonic.slice(0, -1) : item.mnemonic).toUpperCase();
+      const pattern =
+        "^" +
+        core.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+        (channelPlaceholder ? "[0-9]" : "") +
+        "(?![A-Z])";
+      if (new RegExp(pattern).test(body) && (!best || item.mnemonic.length > best.mnemonic.length)) {
+        best = item;
+      }
+    }
+    return best;
+  }
+
   function commandDefinition(value) {
     const normalized = value.trim().toUpperCase();
     const direct = commands.find((item) =>
@@ -987,11 +1039,12 @@
       item.example?.toUpperCase() === normalized
     );
     if (direct) return direct;
-    if (state.controllerAdapterId === "vgc031") {
-      const match = normalized.match(/^#[0-9A-F]{2}([A-Z]{2,3}[+-]?)/);
-      if (match) return commands.find((item) => item.mnemonic === match[1]) || null;
-    }
-    return null;
+    const adapter = controllerRegistry.get(state.controllerAdapterId);
+    if (adapter?.addressed) return addressedDefinition(normalized);
+    // Mnemonic protocols (VGC50x, VGC094): match the mnemonic before any
+    // comma-separated parameters so danger commands with values still confirm.
+    const head = normalized.split(",")[0];
+    return commands.find((item) => item.mnemonic.toUpperCase() === head) || null;
   }
 
   async function sendComposer() {
@@ -1202,6 +1255,55 @@
   }
 
   function parameterSpec(item, parameter, index) {
+    // VGC094-specific option sets are resolved before the shared GUIDED_FIELDS
+    // table so its four-channel gas/filter orders and the extra Ampere unit win.
+    if (state.controllerAdapterId === "vgc094") {
+      if (/^gas[1-4]$/.test(parameter)) {
+        return {
+          type: "select",
+          options: choice([
+            ["0", "Nitrogen / air (N₂)"],
+            ["1", "Helium (He)"],
+            ["2", "Neon (Ne)"],
+            ["3", "Argon (Ar)"],
+            ["4", "Krypton (Kr)"],
+            ["5", "Xenon (Xe)"],
+            ["6", "Hydrogen (H₂)"],
+            ["7", "Other gas"]
+          ]),
+          defaultValue: "0",
+          label: parameterLabel(parameter),
+          help: "VGC094 gas order differs from the VGC50x."
+        };
+      }
+      if (/^filter[1-4]$/.test(parameter)) {
+        return {
+          type: "select",
+          options: choice([["0", "Off"], ["1", "100 Hz"], ["2", "10 Hz"], ["3", "1 Hz"], ["4", "0.1 Hz"]]),
+          defaultValue: "2",
+          label: parameterLabel(parameter),
+          help: "Filter cut-off frequency."
+        };
+      }
+      if (parameter === "unit") {
+        return {
+          type: "select",
+          options: choice([
+            ["0", "mbar / bar"],
+            ["1", "Torr"],
+            ["2", "Pascal (Pa)"],
+            ["3", "micron"],
+            ["4", "hectopascal (hPa)"],
+            ["5", "Volt"],
+            ["6", "Ampere (A)"]
+          ]),
+          defaultValue: "0",
+          label: parameterLabel(parameter),
+          help: "The VGC094 adds Ampere (analog output current) as unit 6."
+        };
+      }
+    }
+
     const direct = GUIDED_FIELDS[item.mnemonic]?.[parameter];
     if (direct) return { ...direct };
 
@@ -1411,8 +1513,10 @@
     if (!$("#guidedCommandDialog").open) $("#guidedCommandDialog").showModal();
   }
 
-  function initGuidedCommands() {
+  function rebuildGuidedCommandOptions() {
     const select = $("#guidedCommandSelect");
+    if (!select) return;
+    select.innerHTML = "";
     CATEGORIES.filter((category) => category !== "All").forEach((category) => {
       const inCategory = commands.filter((item) => item.category === category && isParameterized(item));
       if (!inCategory.length) return;
@@ -1421,7 +1525,16 @@
       inCategory.forEach((item) => group.append(new Option(`${item.mnemonic} — ${item.name}`, item.mnemonic)));
       select.append(group);
     });
-    select.value = "COM";
+    const options = [...select.options];
+    select.value = options.some((option) => option.value === "COM")
+      ? "COM"
+      : (options[0]?.value ?? "");
+    renderGuidedCommand();
+  }
+
+  function initGuidedCommands() {
+    const select = $("#guidedCommandSelect");
+    rebuildGuidedCommandOptions();
     select.addEventListener("change", renderGuidedCommand);
     $$('input[name="guidedMode"]').forEach((input) => input.addEventListener("change", setGuidedMode));
     $("#guidedCommandBtn").addEventListener("click", () => openGuidedCommand());
@@ -1571,7 +1684,7 @@
     state.lastChannels = {};
     $("#deviceName").textContent = "No controller identified";
     $("#deviceMeta").textContent = "Identified automatically after connecting";
-    [1, 2, 3].forEach((channel) => {
+    [1, 2, 3, 4].forEach((channel) => {
       $(`#channelCard${channel}`).className = "channel-card";
       $(`#channelStatus${channel}`).className = "channel-status idle";
       $(`#channelStatus${channel}`).textContent = "Waiting";
