@@ -147,6 +147,11 @@ terminal with simulated traffic — no controller required.
 Previously granted ports reappear in the **Available ports** dropdown; use the refresh button to
 re-scan.
 
+Web Serial does not expose the Windows COM assignment to a webpage. After selecting a port in the
+browser picker, enter its name (for example, `COM13`) in **Windows port label** so that grant is
+recognizable in the dropdown. **Forget selected** revokes one browser grant; **Forget all ports**
+clears the complete grant list.
+
 ### Automatic identification
 
 On connect, the app runs each implemented adapter's **read-only probe steps** and routes every

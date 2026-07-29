@@ -265,6 +265,7 @@
     db: null,
     session: freshSession(),
     portIds: new WeakMap(),
+    portLabels: new WeakMap(),
     nextPortId: 1
   };
 
@@ -460,17 +461,42 @@
     toast("Terminal view cleared; recorded session data was kept.");
   }
 
+  function savedPortLabel(port) {
+    return state.portLabels.get(port) || "";
+  }
+
+  function setPortLabel(port, label) {
+    state.portLabels.set(port, String(label || "").trim());
+  }
+
   function portLabel(port, index) {
     const info = port.getInfo?.() || {};
     const bits = [];
     if (info.usbVendorId) bits.push(`VID ${info.usbVendorId.toString(16).padStart(4, "0").toUpperCase()}`);
     if (info.usbProductId) bits.push(`PID ${info.usbProductId.toString(16).padStart(4, "0").toUpperCase()}`);
+    const label = savedPortLabel(port);
+    if (label) return bits.length ? `${label} (${bits.join(" / ")})` : label;
     return `Granted serial port ${index + 1}${bits.length ? ` · ${bits.join(" / ")}` : ""}`;
   }
 
   function portKey(port) {
     if (!state.portIds.has(port)) state.portIds.set(port, String(state.nextPortId++));
     return state.portIds.get(port);
+  }
+
+  function syncPortControls() {
+    const hasSelection = Boolean(state.selectedPort);
+    $("#portLabelInput").value = hasSelection ? savedPortLabel(state.selectedPort) : "";
+    $("#portLabelInput").disabled = !hasSelection || state.connected || state.connecting;
+    $("#forgetPortBtn").disabled = !hasSelection || state.connected || state.connecting;
+    $("#forgetAllPortsBtn").disabled = !state.ports.length || state.connected || state.connecting;
+  }
+
+  function updateSelectedPortOption() {
+    if (!state.selectedPort) return;
+    const index = state.ports.indexOf(state.selectedPort);
+    const option = $$("#portSelect option").find((item) => item.value === portKey(state.selectedPort));
+    if (option) option.textContent = portLabel(state.selectedPort, index);
   }
 
   async function refreshPorts(preferred = null) {
@@ -489,6 +515,7 @@
         state.selectedPort = chosen;
         select.value = portKey(chosen);
       }
+      syncPortControls();
     } catch (error) {
       toast(`Could not list serial ports: ${error.message}`, "error");
     }
@@ -499,9 +526,45 @@
       const port = await navigator.serial.requestPort();
       state.selectedPort = port;
       await refreshPorts(port);
-      toast("Serial port permission granted. Click Connect when ready.");
+      $("#portLabelInput").focus();
+      toast("Serial port permission granted. Enter the COM name shown in the browser picker, then connect.");
     } catch (error) {
       if (error.name !== "NotFoundError") toast(`Port selection failed: ${error.message}`, "error");
+    }
+  }
+
+  async function forgetPort(port) {
+    if (!port) return;
+    if (typeof port.forget !== "function") {
+      toast("This browser does not support revoking serial port permissions.", "warning");
+      return;
+    }
+    try {
+      await port.forget();
+      state.portLabels.delete(port);
+      if (state.selectedPort === port) state.selectedPort = null;
+      await refreshPorts();
+      toast("Serial port permission revoked.");
+    } catch (error) {
+      toast(`Could not forget the serial port: ${error.message}`, "error");
+    }
+  }
+
+  async function forgetAllPorts() {
+    const ports = [...state.ports];
+    if (!ports.length) return;
+    if (!window.confirm(`Forget permission for all ${ports.length} granted serial port${ports.length === 1 ? "" : "s"}?`)) return;
+    try {
+      await Promise.all(ports.map((port) => {
+        if (typeof port.forget !== "function") throw new Error("This browser does not support revoking serial port permissions.");
+        state.portLabels.delete(port);
+        return port.forget();
+      }));
+      state.selectedPort = null;
+      await refreshPorts();
+      toast("All serial port permissions were revoked.");
+    } catch (error) {
+      toast(`Could not forget all serial ports: ${error.message}`, "error");
     }
   }
 
@@ -518,6 +581,7 @@
     $("#requestPortBtn").disabled = state.connected || searching || !("serial" in navigator);
     $("#refreshPortsBtn").disabled = state.connected || searching || !("serial" in navigator);
     $("#portSelect").disabled = state.connected || searching;
+    syncPortControls();
     ["baudSelect", "dataBitsSelect", "paritySelect", "stopBitsSelect", "flowControlSelect"].forEach((id) => {
       $(`#${id}`).disabled = state.connected || searching;
     });
@@ -1879,7 +1943,15 @@
     $("#refreshPortsBtn").addEventListener("click", () => refreshPorts());
     $("#portSelect").addEventListener("change", () => {
       state.selectedPort = state.ports.find((port) => portKey(port) === $("#portSelect").value) || null;
+      syncPortControls();
     });
+    $("#portLabelInput").addEventListener("input", (event) => {
+      if (!state.selectedPort) return;
+      setPortLabel(state.selectedPort, event.target.value);
+      updateSelectedPortOption();
+    });
+    $("#forgetPortBtn").addEventListener("click", () => forgetPort(state.selectedPort));
+    $("#forgetAllPortsBtn").addEventListener("click", forgetAllPorts);
     $("#connectBtn").addEventListener("click", () => state.connected ? disconnect() : connectSerial());
     $("#demoBtn").addEventListener("click", startDemo);
     $("#sendBtn").addEventListener("click", sendComposer);

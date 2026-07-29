@@ -86,6 +86,11 @@ function Icon({ name, size = 18 }) {
         <circle cx="8" cy="12" r="2" />
         <circle cx="13" cy="18" r="2" />
       </>
+    ),
+    trash: (
+      <>
+        <path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6" />
+      </>
     )
   };
 
@@ -208,6 +213,29 @@ export default function Page() {
                   <option value="">No granted ports</option>
                 </select>
               </label>
+
+              <label className="field">
+                <span className="field-label">Windows port label</span>
+                <input
+                  id="portLabelInput"
+                  type="text"
+                  placeholder="e.g. COM13"
+                  autoComplete="off"
+                  spellCheck="false"
+                  aria-label="Windows COM port label"
+                />
+              </label>
+
+              <div className="button-row">
+                <button className="button ghost" id="forgetPortBtn" type="button" disabled>
+                  <Icon name="trash" />
+                  Forget selected
+                </button>
+                <button className="button ghost" id="forgetAllPortsBtn" type="button" disabled>
+                  <Icon name="trash" />
+                  Forget all ports
+                </button>
+              </div>
 
               <button className="button secondary full" id="requestPortBtn" type="button">
                 <Icon name="plug" />
