@@ -2,6 +2,10 @@ import Script from "next/script";
 
 export const dynamic = "force-static";
 
+// These files are served from public/ and are not content-hashed by the static export.
+// Keep the page and serial client in lockstep after a deploy or local update.
+const publicClientVersion = "20260729-serial-port-fix";
+
 function Icon({ name, size = 18 }) {
   const paths = {
     plug: (
@@ -848,8 +852,8 @@ export default function Page() {
       </dialog>
 
       <div className="toast-region" id="toastRegion" aria-live="polite" />
-      <Script src="./controllers.js" strategy="afterInteractive" />
-      <Script src="./app.js" strategy="afterInteractive" />
+      <Script src={`./controllers.js?v=${publicClientVersion}`} strategy="afterInteractive" />
+      <Script src={`./app.js?v=${publicClientVersion}`} strategy="afterInteractive" />
     </>
   );
 }

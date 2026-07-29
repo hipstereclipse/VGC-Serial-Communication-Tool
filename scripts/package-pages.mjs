@@ -42,7 +42,8 @@ await Promise.all(
         ? url.slice(projectPrefix.length)
         : null;
 
-    if (relativeAsset) await access(path.join(output, relativeAsset));
+    // URLs may include a cache-busting query string; the emitted file does not.
+    if (relativeAsset) await access(path.join(output, relativeAsset.split(/[?#]/, 1)[0]));
   })
 );
 
