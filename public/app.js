@@ -21,6 +21,7 @@
   const CATEGORIES = ["All", "Measurement", "Switching", "Gauge", "Gauge control", "General", "Logger", "Transfer & test", "Network"];
   const TOKEN_BYTES = { CR: 13, LF: 10, ENQ: 5, ACK: 6, NAK: 21, ETX: 3, TAB: 9, NUL: 0 };
   const CONTROL_NAMES = { 0: "NUL", 3: "ETX", 5: "ENQ", 6: "ACK", 9: "TAB", 10: "LF", 13: "CR", 21: "NAK" };
+  const AUTO_BAUD_VALUE = "auto";
   const choice = (values) => values.map(([value, label]) => ({ value, label }));
   const ON_OFF = choice([["0", "Off"], ["1", "On"]]);
   const CHANNEL_STATE = { type: "select", options: ON_OFF, defaultValue: "0", help: "Choose the state for this channel." };
@@ -244,6 +245,8 @@
     reader: null,
     readLoop: null,
     connected: false,
+    connecting: false,
+    serialSettings: null,
     demo: false,
     demoTimer: null,
     pendingCommand: "",
@@ -351,8 +354,10 @@
   }
 
   function collectSettings() {
+    const baudValue = $("#baudSelect").value;
     return {
-      baudRate: Number($("#baudSelect").value),
+      baudRate: baudValue === AUTO_BAUD_VALUE ? null : Number(baudValue),
+      autoBaud: baudValue === AUTO_BAUD_VALUE,
       dataBits: Number($("#dataBitsSelect").value),
       stopBits: Number($("#stopBitsSelect").value),
       parity: $("#paritySelect").value,
@@ -361,6 +366,34 @@
       lineEnding: $("#lineEndingSelect").value,
       autoEnq: $("#autoEnqCheck").checked
     };
+  }
+
+  function framingLabel(settings) {
+    const parity = settings.parity === "none" ? "N" : settings.parity[0].toUpperCase();
+    return `${settings.dataBits}-${parity}-${settings.stopBits}`;
+  }
+
+  function activeSerialSettings() {
+    return state.serialSettings || collectSettings();
+  }
+
+  function autoBaudScanPlan() {
+    const availableRates = $$("#baudSelect option")
+      .map((option) => Number(option.value))
+      .filter(Number.isFinite);
+    const adaptersByDefaultRate = new Map();
+    for (const adapter of controllerRegistry.implemented) {
+      const rate = adapter.manualDefaults?.baudRate;
+      if (!availableRates.includes(rate)) continue;
+      if (!adaptersByDefaultRate.has(rate)) adaptersByDefaultRate.set(rate, []);
+      adaptersByDefaultRate.get(rate).push(adapter);
+    }
+    const defaultRates = [...adaptersByDefaultRate.keys()];
+    return [
+      ...defaultRates.map((baudRate) => ({ baudRate, adapters: adaptersByDefaultRate.get(baudRate) })),
+      ...availableRates
+        .map((baudRate) => ({ baudRate, adapters: controllerRegistry.implemented }))
+    ];
   }
 
   function addLog(direction, bytes, label = "") {
@@ -475,16 +508,18 @@
   function setConnection(mode) {
     state.connected = mode === "serial" || mode === "demo";
     state.demo = mode === "demo";
+    const searching = state.connecting;
     const pill = $("#connectionPill");
     pill.className = `connection-pill ${mode === "serial" ? "online" : mode === "demo" ? "demo" : "offline"}`;
     $("#connectionPillText").textContent = mode === "serial" ? "Serial connected" : mode === "demo" ? "Demo connected" : "Not connected";
-    $("#connectBtn").textContent = state.connected ? "Disconnect" : "Connect";
-    $("#demoBtn").disabled = state.connected;
-    $("#requestPortBtn").disabled = state.connected || !("serial" in navigator);
-    $("#refreshPortsBtn").disabled = state.connected || !("serial" in navigator);
-    $("#portSelect").disabled = state.connected;
+    $("#connectBtn").textContent = state.connected ? (searching ? "Cancel" : "Disconnect") : searching ? "Scanning..." : "Connect";
+    $("#connectBtn").disabled = searching && !state.connected;
+    $("#demoBtn").disabled = state.connected || searching;
+    $("#requestPortBtn").disabled = state.connected || searching || !("serial" in navigator);
+    $("#refreshPortsBtn").disabled = state.connected || searching || !("serial" in navigator);
+    $("#portSelect").disabled = state.connected || searching;
     ["baudSelect", "dataBitsSelect", "paritySelect", "stopBitsSelect", "flowControlSelect"].forEach((id) => {
-      $(`#${id}`).disabled = state.connected;
+      $(`#${id}`).disabled = state.connected || searching;
     });
     $("#sendBtn").disabled = !state.connected;
     $("#identifyBtn").disabled = !state.connected;
@@ -609,33 +644,36 @@
     });
   }
 
-  async function identifyController() {
+  async function identifyController({ adapters = controllerRegistry.implemented, autoBaud = false } = {}) {
     if (!state.connected || state.demo || state.identifying) return state.identity;
     state.identifying = true;
     state.identity = null;
     state.controllerAdapterId = null;
     $("#deviceName").textContent = "Identifying controller…";
-    const settings = collectSettings();
+    const settings = activeSerialSettings();
     $("#deviceMeta").textContent = `Safe read-only probes at ${settings.baudRate} baud`;
     $("#trafficStatus").textContent = "Running identity probes";
     addSystem("Automatic identification started. Only documented read-only commands will be sent.");
 
     let identity = null;
     try {
-      for (const adapter of controllerRegistry.implemented) {
+      for (const adapter of adapters) {
         if (!state.connected) break;
         for (const step of adapter.probeSteps) {
           if (!state.connected) break;
           state.activeProbe = { adapterId: adapter.id, command: step.command };
-          await transmit(encoder.encode(step.text), { command: step.command, label: step.label });
-          identity = await waitForIdentity(step.timeoutMs);
+          const identityResponse = waitForIdentity(step.timeoutMs);
+          const sent = await transmit(encoder.encode(step.text), { command: step.command, label: step.label });
+          if (!sent && state.identityWaiter) state.identityWaiter(null);
+          identity = await identityResponse;
           if (identity) break;
           state.pendingCommand = "";
         }
         if (identity) {
-          if (adapter.verifyStep) {
-            const step = adapter.verifyStep;
-            state.activeProbe = { adapterId: adapter.id, command: step.command };
+          const matchedAdapter = controllerRegistry.get(identity.adapterId) || adapter;
+          if (matchedAdapter.verifyStep) {
+            const step = matchedAdapter.verifyStep;
+            state.activeProbe = { adapterId: matchedAdapter.id, command: step.command };
             await transmit(encoder.encode(step.text), { command: step.command, label: step.label });
           }
           break;
@@ -654,12 +692,30 @@
       $("#deviceMeta").textContent = `No known response at ${settings.baudRate}, ${settings.dataBits}-${parity}-${settings.stopBits}`;
       $("#trafficStatus").textContent = "Connected · identity not verified";
       addSystem("No supported identity signature was received. Check baud/framing and controller address, then re-identify.");
-      toast("Connected, but the controller identity could not be verified.", "warning");
+      if (!autoBaud) toast("Connected, but the controller identity could not be verified.", "warning");
     }
     return identity;
   }
 
+  async function openSerial(settings) {
+    await state.selectedPort.open({
+      baudRate: settings.baudRate,
+      dataBits: settings.dataBits,
+      stopBits: settings.stopBits,
+      parity: settings.parity,
+      flowControl: settings.flowControl,
+      bufferSize: 4096
+    });
+    state.port = state.selectedPort;
+    state.serialSettings = settings;
+    state.session.settings = { ...settings };
+    setConnection("serial");
+    addSystem(`Connected at ${settings.baudRate} baud, ${framingLabel(settings)}, flow ${settings.flowControl}.`);
+    state.readLoop = readSerial(state.port);
+  }
+
   async function connectSerial() {
+    if (state.connecting) return;
     if (!("serial" in navigator)) {
       toast("Web Serial is unavailable here. Use current Chrome or Edge over HTTPS.", "warning");
       return;
@@ -670,35 +726,60 @@
       await requestPort();
       if (!state.selectedPort) return;
     }
+
+    state.connecting = true;
+    setConnection("offline");
     try {
-      const settings = collectSettings();
-      await state.selectedPort.open({
-        baudRate: settings.baudRate,
-        dataBits: settings.dataBits,
-        stopBits: settings.stopBits,
-        parity: settings.parity,
-        flowControl: settings.flowControl,
-        bufferSize: 4096
-      });
-      state.port = state.selectedPort;
-      setConnection("serial");
-      state.session.settings = settings;
-      addSystem(`Connected at ${settings.baudRate} baud, ${settings.dataBits}-${settings.parity === "none" ? "N" : settings.parity[0].toUpperCase()}-${settings.stopBits}, flow ${settings.flowControl}.`);
-      state.readLoop = readSerial();
-      toast("Serial connection opened.");
-      await identifyController();
+      const requestedSettings = collectSettings();
+      if (!requestedSettings.autoBaud) {
+        await openSerial(requestedSettings);
+        toast("Serial connection opened.");
+        await identifyController();
+        return;
+      }
+
+      for (const { baudRate, adapters } of autoBaudScanPlan()) {
+        if (!state.connecting) break;
+        const settings = { ...requestedSettings, baudRate, autoBaud: true };
+        $("#deviceName").textContent = "Scanning for controller...";
+        $("#deviceMeta").textContent = `Trying ${baudRate} baud, ${framingLabel(settings)}`;
+        $("#trafficStatus").textContent = `Auto baud scan: ${baudRate} baud`;
+        addSystem(`Auto baud scan: trying ${baudRate} baud, ${framingLabel(settings)}.`);
+        await openSerial(settings);
+        const identity = await identifyController({ adapters, autoBaud: true });
+        if (identity) {
+          addSystem(`Auto baud scan identified ${identity.controller} at ${baudRate} baud.`);
+          toast(`${identity.controller} detected at ${baudRate} baud.`);
+          return;
+        }
+        if (!state.connecting) break;
+        await disconnect({ silent: true, keepSearching: true });
+      }
+
+      if (state.connecting) {
+        $("#deviceName").textContent = "No controller detected";
+        $("#deviceMeta").textContent = "Auto scan completed without a verified controller response.";
+        $("#trafficStatus").textContent = "Auto baud scan completed";
+        addSystem("Auto baud scan completed without a supported controller identity.");
+        toast("No supported controller response was detected at the available baud rates.", "warning");
+      }
     } catch (error) {
+      if (state.connected) await disconnect({ silent: true });
       toast(`Could not open the port: ${error.message}. Close any other serial program and try again.`, "error");
+    } finally {
+      const mode = state.connected ? (state.demo ? "demo" : "serial") : "offline";
+      state.connecting = false;
+      setConnection(mode);
     }
   }
 
-  async function readSerial() {
+  async function readSerial(port) {
     try {
-      while (state.port?.readable && state.connected && !state.demo) {
-        const reader = state.port.readable.getReader();
+      while (port.readable && state.port === port && state.connected && !state.demo) {
+        const reader = port.readable.getReader();
         state.reader = reader;
         try {
-          while (true) {
+          while (state.port === port && state.connected && !state.demo) {
             const { value, done } = await reader.read();
             if (done) break;
             if (value?.length) receiveBytes(value);
@@ -709,7 +790,7 @@
         }
       }
     } catch (error) {
-      if (state.connected) {
+      if (state.connected && state.port === port) {
         addSystem(`Serial read stopped: ${error.message}`);
         toast(`Serial read stopped: ${error.message}`, "error");
         await disconnect();
@@ -717,9 +798,10 @@
     }
   }
 
-  async function disconnect() {
+  async function disconnect({ silent = false, keepSearching = false } = {}) {
     const wasDemo = state.demo;
     state.connected = false;
+    if (!keepSearching) state.connecting = false;
     if (state.demoTimer) clearInterval(state.demoTimer);
     state.demoTimer = null;
     try {
@@ -732,14 +814,17 @@
     }
     state.port = null;
     state.reader = null;
+    state.serialSettings = null;
     state.pendingCommand = "";
     state.activeProbe = null;
     if (state.identityWaiter) state.identityWaiter(null);
     state.identityWaiter = null;
     state.identifying = false;
     setConnection("offline");
-    addSystem(wasDemo ? "Demo disconnected." : "Serial port disconnected.");
-    await persistSession();
+    if (!silent) {
+      addSystem(wasDemo ? "Demo disconnected." : "Serial port disconnected.");
+      await persistSession();
+    }
   }
 
   async function transmit(bytes, { label = "", command = "", raw = false } = {}) {

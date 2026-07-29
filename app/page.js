@@ -217,7 +217,10 @@ export default function Page() {
               <div className="settings-grid">
                 <label className="field">
                   <span className="field-label">Baud</span>
-                  <select id="baudSelect">
+                  <select id="baudSelect" defaultValue="auto">
+                    <option value="auto">
+                      Auto
+                    </option>
                     <option>300</option>
                     <option>600</option>
                     <option>1200</option>
@@ -227,7 +230,7 @@ export default function Page() {
                     <option>19200</option>
                     <option>38400</option>
                     <option>57600</option>
-                    <option selected>115200</option>
+                    <option>115200</option>
                   </select>
                 </label>
                 <label className="field">
@@ -590,7 +593,8 @@ export default function Page() {
                   port.
                 </li>
                 <li>
-                  Select the controller&apos;s configured framing. VGC031 defaults to{" "}
+                  Leave Baud set to <strong>Auto</strong> to try each supported controller&apos;s
+                  factory default first, then every listed baud rate. VGC031 defaults to{" "}
                   <strong>19200, 8 data bits, no parity, 1 stop bit</strong>; VGC50x commonly uses
                   115200, 8-N-1.
                 </li>

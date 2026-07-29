@@ -75,7 +75,17 @@ try {
       returnByValue: true
     });
     if (initialized.result?.value) break;
-    if (attempt === 39) throw new Error("Timed out waiting for the application to initialize.");
+    if (attempt === 39) {
+      const diagnostics = await cdp.send("Runtime.evaluate", {
+        expression: `({
+          commandCount: document.querySelector("#commandCount")?.textContent,
+          controllerRegistry: typeof window.VGCControllerRegistry,
+          scripts: Array.from(document.scripts, (script) => script.src || "inline")
+        })`,
+        returnByValue: true
+      });
+      throw new Error(`Timed out waiting for the application to initialize: ${JSON.stringify(diagnostics.result?.value)}`);
+    }
     await pause(100);
   }
   const result = await cdp.send("Runtime.evaluate", {
@@ -107,6 +117,8 @@ try {
         guidedPreview,
         guidedCommand,
         guidedOptions,
+        baudMode: document.querySelector("#baudSelect").value,
+        baudOptions: Array.from(document.querySelector("#baudSelect").options, (option) => option.value),
         connection: document.querySelector("#connectionPillText").textContent,
         device: document.querySelector("#deviceName").textContent,
         channel: document.querySelector("#channelValue1").textContent,
@@ -134,6 +146,8 @@ try {
     value?.guidedPreview === "COM,2",
     value?.guidedCommand === "COM,2",
     value?.guidedOptions >= 40,
+    value?.baudMode === "auto",
+    value?.baudOptions?.[0] === "auto",
     value?.connection === "Demo connected",
     value?.device?.includes("VGC501"),
     value?.channel && value.channel !== "—",

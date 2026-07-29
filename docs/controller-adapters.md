@@ -12,7 +12,8 @@ Each adapter has:
 - `id`, `family`, and `label` for stable identity and UI text.
 - `implementation`: `"complete"` enables probing; `"skeleton"` keeps the
   adapter inert.
-- `manualDefaults` for documented factory framing.
+- `manualDefaults` for documented factory framing. The Auto baud scan tries
+  these rates first, then all rates exposed by the UI.
 - `probeSteps`: ordered, read-only byte strings used after Connect.
 - `verifyStep`: an optional second read sent only after identity is verified.
 - `identify(line, context)`: returns a normalized identity or `null`.
